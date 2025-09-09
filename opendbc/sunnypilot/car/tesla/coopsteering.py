@@ -24,13 +24,18 @@ def get_steer_from_lat_accel(lat_accel, v_ego_raw: float, VM: VehicleModel):
   return math.degrees(VM.get_steer_from_curvature(max_curvature, v_ego_raw, 0))  # deg
 
 def applyOverrideAngle(apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
-    # ignore torque pffset and disturbances
-    steering_torque_deadzone = driverTorque - np.clip(driverTorque, -STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MIN_TORQUE)
+  # ignore torque offset and disturbances
+  steering_torque_with_deadzone = driverTorque - np.clip(driverTorque, -STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MIN_TORQUE)
+  override_ratio_signed = steering_torque_with_deadzone / (STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE)
+  # emulate power steering resistance - lateral acceleration maps to steering torque via steering rack
+  override_angle_target = get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL * override_ratio_signed, vEgo, VM) # todo this assumes we are turning from straight, add actual lat acceleration
 
-    torque_to_angle = get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM) / (STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE) # todo scale lat acc instead of angle
-    override_angle_target = steering_torque_deadzone * min(torque_to_angle, STEER_OVERRIDE_GAIN_LIMIT)
+  # to prevent jerky steering limit the override angle to this linear torque to angle mapping
+  # todo replace with some dynamic trajectory function
+  override_angle_gain_limit = STEER_OVERRIDE_GAIN_LIMIT * steering_torque_with_deadzone
+  override_angle_target = np.clip(override_angle_target, -override_angle_gain_limit, override_angle_gain_limit)
 
-    return apply_angle + override_angle_target
+  return apply_angle + override_angle_target
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
