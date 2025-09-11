@@ -18,19 +18,24 @@ STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering m
 STEER_OVERRIDE_GAIN_LIMIT = 10 # jerky but stable
 
 
-def get_steer_from_lat_accel(lat_accel, v_ego_raw: float, VM: VehicleModel):
+def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
   """Calculate the maximum steering angle based on lateral acceleration."""
-  max_curvature = lat_accel / (max(1, v_ego_raw) ** 2)  # 1/m
-  return math.degrees(VM.get_steer_from_curvature(max_curvature, v_ego_raw, 0))  # deg
+  max_curvature = lat_accel / (max(1, v_ego) ** 2)  # 1/m
+  return math.degrees(VM.get_steer_from_curvature(max_curvature, v_ego, 0))  # deg
 
-def applyOverrideAngle(apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
-    # ignore torque pffset and disturbances
-    steering_torque_deadzone = driverTorque - np.clip(driverTorque, -STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MIN_TORQUE)
+def calc_override_angle(apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+  """Convert driver torque to lateral acceleration and apply override angle."""
 
-    torque_to_angle = get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM) / (STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE) # todo scale lat acc instead of angle
-    override_angle_target = steering_torque_deadzone * min(torque_to_angle, STEER_OVERRIDE_GAIN_LIMIT)
+  # ignore torque sensor offset and disturbances
+  steering_torque_with_deadzone = driverTorque - np.clip(driverTorque, -STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MIN_TORQUE)
+  max_override_torque = (STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE)
 
-    return apply_angle + override_angle_target
+  # lateral acc is linear in respect to angle so it's fine to interpolate it with torque
+  torque_to_angle = get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM) / max_override_torque
+  # limit the gain to prevent jerkiness and instability
+  override_angle_target = steering_torque_with_deadzone * min(torque_to_angle, STEER_OVERRIDE_GAIN_LIMIT)
+
+  return apply_angle + override_angle_target
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -46,12 +51,11 @@ class CoopSteeringCarController:
     coop_steering = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
     control_type = 2 if coop_steering else 1
 
-    steering_angle_with_override = applyOverrideAngle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+    apply_angle_with_override = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
 
-    return CoopSteeringDataSP(control_type, steering_angle_with_override)
+    return CoopSteeringDataSP(control_type, apply_angle_with_override)
 
   def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
     self.coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
     return self.coop_steering
-
 
