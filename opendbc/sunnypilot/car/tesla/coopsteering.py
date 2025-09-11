@@ -12,10 +12,13 @@ from opendbc.car import structs
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.sunnypilot.car import get_param
 
+LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completly off below
+LKAS_OVERRIDE_OFF_TORQUE = 1.5 # LKAS coop steering completly off below
+
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
-STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
-STEER_OVERRIDE_GAIN_LIMIT = 10 # jerky but stable
+STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode 
+STEER_OVERRIDE_GAIN_LIMIT = 6 # stability and smoothness in angle control mode or LKAS low speed
 
 
 def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
@@ -25,7 +28,6 @@ def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
 
 def calc_override_angle(apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
   """Convert driver torque to lateral acceleration and apply override angle."""
-
   # ignore torque sensor offset and disturbances
   steering_torque_with_deadzone = driverTorque - np.clip(driverTorque, -STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MIN_TORQUE)
   max_override_torque = (STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE)
@@ -36,6 +38,16 @@ def calc_override_angle(apply_angle: float, driverTorque: float, vEgo: float, VM
   override_angle_target = steering_torque_with_deadzone * min(torque_to_angle, STEER_OVERRIDE_GAIN_LIMIT)
 
   return apply_angle + override_angle_target
+
+def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angle: float, driverTorque: float, vEgo: float) -> float:
+  # lkas contribution is done by the car and is a difference betwen out command and measured angle
+  lkas_angle = steering_angle - apply_angle_last
+
+  # get out of the way if LKAS doesn't allow coop steering
+  if vEgo < LKAS_OVERRIDE_OFF_SPEED or abs(driverTorque) < LKAS_OVERRIDE_OFF_TORQUE:
+    lkas_angle = 0
+
+  return apply_angle - lkas_angle
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -52,6 +64,8 @@ class CoopSteeringCarController:
     control_type = 2 if coop_steering else 1
 
     apply_angle_with_override = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+    apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
+                                                  CS.out.steeringTorque, CS.out.vEgoRaw)
 
     return CoopSteeringDataSP(control_type, apply_angle_with_override)
 
