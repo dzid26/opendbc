@@ -64,8 +64,9 @@ class CoopSteeringCarController:
     control_type = 2 if coop_steering else 1
 
     apply_angle_with_override = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
-    apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
-                                                  CS.out.steeringTorque, CS.out.vEgoRaw)
+    if control_type == 2: # LKAS
+      apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
+                                                    CS.out.steeringTorque, CS.out.vEgoRaw)
 
     return CoopSteeringDataSP(control_type, apply_angle_with_override)
 
