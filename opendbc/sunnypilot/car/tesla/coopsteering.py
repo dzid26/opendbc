@@ -13,7 +13,8 @@ from opendbc.car.vehicle_model import VehicleModel
 from opendbc.sunnypilot.car import get_param
 
 LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completly off below
-LKAS_OVERRIDE_OFF_TORQUE = 1.5 # LKAS coop steering completly off below
+LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
+LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
@@ -43,8 +44,13 @@ def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angl
   # lkas contribution is done by the car and is a difference betwen out command and measured angle
   lkas_angle = steering_angle - apply_angle_last
 
-  # get out of the way if LKAS doesn't allow coop steering
-  if vEgo < LKAS_OVERRIDE_OFF_SPEED or abs(driverTorque) < LKAS_OVERRIDE_OFF_TORQUE:
+  # smooth transition to LKAS based on enable torque
+  lkas_angle = np.interp(abs(driverTorque),
+                         [LKAS_OVERRIDE_OFF_TORQUE, LKAS_OVERRIDE_ON_TORQUE],
+                         [0, lkas_angle])
+
+  # get out of the way if below  speed for LKAS coop steering
+  if vEgo < LKAS_OVERRIDE_OFF_SPEED:
     lkas_angle = 0
 
   return apply_angle - lkas_angle
@@ -58,8 +64,7 @@ class CoopSteeringCarController:
     super().__init__()
     self.coop_steering = CoopSteeringDataSP(False, 0)
 
-  @staticmethod
-  def coop_steering_update(CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
+  def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
     coop_steering = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
     control_type = 2 if coop_steering else 1
 
