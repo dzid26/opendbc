@@ -89,7 +89,13 @@ class CoopSteeringCarController:
           or CS.out.steeringRateDeg != 0
       )
     else:
-      lat_pause_req = CS.hands_on_level == 3 # todo lower threshold for low speed / low angle
+      # todo use steeringTorque threshold from angle and lateral_acc to roughly match steering resistrance after dissengagment (EPAS3S_currentTuneMode dependant)
+      if CS.out.vEgoRaw < 3.0:
+        lat_pause_req = CS.hands_on_level >= 1
+      elif CS.out.vEgoRaw < LKAS_OVERRIDE_OFF_SPEED:
+        lat_pause_req = CS.hands_on_level >= 2
+      else:
+        lat_pause_req = CS.hands_on_level >= 3
     return lat_pause_req
 
   def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
