@@ -11,8 +11,10 @@ from collections import namedtuple
 from opendbc.car import structs
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.sunnypilot.car import get_param
+from openpilot.common.params import Params
 
 LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completly off below
+LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completly on above
 LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
 LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 
@@ -21,6 +23,7 @@ STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS take
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode 
 STEER_OVERRIDE_GAIN_LIMIT = 6 # stability and smoothness in angle control mode or LKAS low speed
 
+ALLOW_STEER_PAUSE_SPEED = LKAS_OVERRIDE_ON_SPEED
 
 def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
   """Calculate the maximum steering angle based on lateral acceleration."""
@@ -57,23 +60,52 @@ def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angl
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
-                                ["control_type", "steeringAngleDeg"])
+                                ["control_type", "lat_pause", "steeringAngleDeg"])
+
+class CoopSteeringCarState:
+  def __init__(self):
+    self.enabled = False
+
+  def controls_disengage_cond(self, ret: structs.CarState) -> bool:
+    self.enabled = Params().get_bool("TeslaCoopSteering")
+    
+    if self.enabled and ret.vEgo < ALLOW_STEER_PAUSE_SPEED:
+      # ignore hands on level when cooperative steering is enabled
+      return ret.steeringDisengage and not self.hands_on_level >= 3
+    return ret.steeringDisengage
 
 class CoopSteeringCarController:
   def __init__(self):
     super().__init__()
-    self.coop_steering = CoopSteeringDataSP(False, 0)
+    self.enabled = False
+    self.coop_steering = CoopSteeringDataSP(False, False, 0)
+
+  def steer_pause_state(self, CC: structs.CarControl, CS: structs.CarState) -> bool:
+    if self.coop_steering.lat_pause:
+      # keep disengaged while:
+      lat_pause_req = (
+          CS.hands_on_level > 0
+          or CS.out.standstill
+          or CS.out.steeringRateDeg != 0
+      )
+    else:
+      lat_pause_req = CS.hands_on_level == 3 # todo lower threshold for low speed / low angle
+    return lat_pause_req
 
   def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
-    coop_steering = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
-    control_type = 2 if coop_steering else 1
+    self.enabled = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
+    control_type = 2 if self.enabled else 1
+
+    lat_pause = False
+    if self.enabled and CC.latActive:
+      lat_pause = self.steer_pause_state(CC, CS)
 
     apply_angle_with_override = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
     if control_type == 2: # LKAS
       apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
                                                     CS.out.steeringTorque, CS.out.vEgoRaw)
 
-    return CoopSteeringDataSP(control_type, apply_angle_with_override)
+    return CoopSteeringDataSP(control_type, lat_pause, apply_angle_with_override)
 
   def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
     self.coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
