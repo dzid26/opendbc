@@ -175,9 +175,13 @@ static void tesla_rx_hook(const CANPacket_t *msg) {
                             (cruise_state == 6) ||  // PRE_FAULT
                             (cruise_state == 7);    // PRE_CANCEL
       cruise_engaged = cruise_engaged && !tesla_autopark;
-
-      vehicle_moving = cruise_state != 3; // STANDSTILL
       pcm_cruise_check(cruise_engaged);
+    }
+
+    // ESP_B
+    if (msg->addr == 0x155U) {
+      // ESP_vehicleStandstillSts
+      vehicle_moving = (msg->data[5] & 0x02U) == 0U;
     }
   }
 
