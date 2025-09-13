@@ -94,20 +94,21 @@ class CoopSteeringCarController:
 
   def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
     self.enabled = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
-    control_type = 2 if self.enabled else 1
 
-    lat_pause = False
     if self.enabled and CC.latActive:
+      control_type = 2  # LKAS mode todo: use CAN parser enums
       lat_pause = self.steer_pause_state(CC, CS)
-
-    apply_angle_with_override = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
-    if control_type == 2: # LKAS
-      apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
-                                                    CS.out.steeringTorque, CS.out.vEgoRaw)
+      apply_angle_with_override = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+      if control_type == 2: # LKAS
+        apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
+                                                      CS.out.steeringTorque, CS.out.vEgoRaw)
+    else:
+      control_type = 1 # angle control mode
+      lat_pause = False
+      apply_angle_with_override = CC.actuators.steeringAngleDeg
 
     return CoopSteeringDataSP(control_type, lat_pause, apply_angle_with_override)
 
   def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
     self.coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
     return self.coop_steering
-
