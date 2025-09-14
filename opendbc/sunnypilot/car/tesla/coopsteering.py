@@ -142,15 +142,21 @@ class CoopSteeringCarController:
       apply_angle = self.resume_steer_rate_limit_ramp(lat_pause, CC.actuators.steeringAngleDeg, self.apply_angle_last)
       apply_angle_with_override = calc_override_angle(apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
       if control_type == 2: # LKAS
-        apply_angle_with_override = lkas_compensation(apply_angle_with_override, self.apply_angle_last, CS.out.steeringAngleDeg,
+        apply_angle = lkas_compensation(apply_angle, self.apply_angle_last, CS.out.steeringAngleDeg,
                                                       CS.out.steeringTorque, CS.out.vEgoRaw)
     else:
       control_type = 1 # angle control mode
       lat_pause = False
-      apply_angle_with_override = CC.actuators.steeringAngleDeg
+      apply_angle = CC.actuators.steeringAngleDeg
 
-    return CoopSteeringDataSP(control_type, lat_pause, apply_angle_with_override)
+    self.coop_steering = CoopSteeringDataSP(control_type, lat_pause, apply_angle)
+    return self.coop_steering
 
   def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
-    self.coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
-    return self.coop_steering
+    coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
+
+    # Replicate carcontroller behaviour here to apply steering wheel acceleration limit on all user hand overs
+    lat_active = CC.latActive and CS.hands_on_level < 3 and not coop_steering.lat_pause
+    apply_angle = self.resume_steer_acc_limit(lat_active, coop_steering.steeringAngleDeg, self.apply_angle_last)
+
+    return CoopSteeringDataSP(coop_steering.control_type, coop_steering.lat_pause, apply_angle)
