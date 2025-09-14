@@ -21,7 +21,7 @@ LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
-STEER_OVERRIDE_GAIN_LIMIT = 6 # stability and smoothness in angle control mode or LKAS low speed
+STEER_OVERRIDE_GAIN_LIMIT = 8 # stability and smoothness in angle control mode or LKAS low speed
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
