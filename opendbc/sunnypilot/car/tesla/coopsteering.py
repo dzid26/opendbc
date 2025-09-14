@@ -71,7 +71,7 @@ class CoopSteeringCarState:
     
     if self.enabled and ret.vEgo < ALLOW_STEER_PAUSE_SPEED:
       # ignore hands on level when cooperative steering is enabled
-      return ret.steeringDisengage and not self.hands_on_level >= 3
+      return ret.steeringDisengage # todo fix this
     return ret.steeringDisengage
 
 class CoopSteeringCarController:
