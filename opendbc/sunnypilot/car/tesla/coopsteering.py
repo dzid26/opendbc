@@ -63,15 +63,18 @@ def calc_override_angle(apply_angle: float, driverTorque: float, vEgo: float, VM
   return apply_angle + override_angle_target
 
 def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angle: float, driverTorque: float, vEgo: float) -> float:
-  # lkas contribution is done by the car and is a difference betwen out command and measured angle
+  # lkas contribution is done by the car and is a difference between our command and measured angle
   lkas_angle = steering_angle - apply_angle_last
+  # steering_angle can be lagging behind the command so ignore that:
+  if driverTorque * lkas_angle < 0:
+    lkas_angle = 0
 
   # smooth transition to LKAS based on enable torque
   lkas_angle = np.interp(abs(driverTorque),
                          [LKAS_OVERRIDE_OFF_TORQUE, LKAS_OVERRIDE_ON_TORQUE],
                          [0, lkas_angle])
-
-  # get out of the way if below  speed for LKAS coop steering
+  
+  # get out of the way if below speed for LKAS coop steering
   if vEgo < LKAS_OVERRIDE_OFF_SPEED:
     lkas_angle = 0
 
