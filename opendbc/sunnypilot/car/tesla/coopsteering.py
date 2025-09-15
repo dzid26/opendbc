@@ -14,7 +14,7 @@ from opendbc.sunnypilot.car import get_param
 from openpilot.common.params import Params
 
 LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completly off below
-LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completly on above
+LKAS_OVERRIDE_ON_SPEED = 6.7 # LKAS coop steering completly on above
 LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
 LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 
@@ -119,7 +119,7 @@ class CoopSteeringCarController:
     lat_pause_req = (
       CS.out.vEgoRaw < STEER_PAUSE_ALLOW_SPEED and
       self.time_since_user_engage > STEER_PAUSE_WAIT_TIME and
-      CS.hands_on_level > 0 and   # this provides a small delay and hysteresis. But careful, it turns off instantly if noisy torque changes sign
+      CS.out.steeringPressed and
       torque_override
       )
 
