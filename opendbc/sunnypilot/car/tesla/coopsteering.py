@@ -23,12 +23,10 @@ STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS take
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
 STEER_OVERRIDE_GAIN_LIMIT = 8 # stability and smoothness in angle control mode or LKAS low speed
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
-STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
-STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0
-STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
+STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED
+STEER_PAUSE_WAIT_TIME = 1.0 # s - wait time before disengaging after engagement with a stalk
 
-STEER_RESUME_ANGLE_TOLERANCE = 2 # deg - angle tolerance to controls angle for resuming from pause
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 100 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -42,22 +40,6 @@ class CoopSteeringCarState:
     self.enabled = Params().get_bool("TeslaCoopSteering")
     
     if self.enabled and ret.vEgo < STEER_PAUSE_ALLOW_SPEED:
-      # ignore hands on level when cooperative steering is enabled
-      return ret.steeringDisengage # todo fix this
-    return ret.steeringDisengage
-
-
-CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
-                                ["control_type", "lat_pause", "steeringAngleDeg"])
-
-class CoopSteeringCarState:
-  def __init__(self):
-    self.enabled = False
-
-  def controls_disengage_cond(self, ret: structs.CarState) -> bool:
-    self.enabled = Params().get_bool("TeslaCoopSteering")
-    
-    if self.enabled and ret.vEgo < ALLOW_STEER_PAUSE_SPEED:
       # ignore hands on level when cooperative steering is enabled
       return ret.steeringDisengage # todo fix this
     return ret.steeringDisengage
@@ -126,12 +108,14 @@ class CoopSteeringCarController:
     self.enabled = False
     self.coop_steering = CoopSteeringDataSP(False, False, 0)
     self.angle_rate_delta_lim = 0
+    self.time_since_user_engage = 0
 
   def steer_pause_state(self, CS: structs.CarState, torque_hold: float) -> bool:
     torque_override = calc_torque_override(CS.out.steeringTorque, torque_hold)
     # disengage conditions:
-    lat_pause_req = ( # todo add 1s delay since engagement
-      CS.out.vEgoRaw < ALLOW_STEER_PAUSE_SPEED and
+    lat_pause_req = (
+      CS.out.vEgoRaw < STEER_PAUSE_ALLOW_SPEED and
+      self.time_since_user_engage > STEER_PAUSE_WAIT_TIME and
       CS.hands_on_level > 0 and   # this provides a small delay and hysteresis. But careful, it turns off instantly if noisy torque changes sign
       torque_override
       )
@@ -164,6 +148,7 @@ class CoopSteeringCarController:
     self.enabled = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
 
     if self.enabled and CC.latActive:
+      self.time_since_user_engage = self.time_since_user_engage + DT_CTRL
       control_type = 2  # LKAS mode todo: use CAN parser enums
       lat_pause = self.steer_pause_state(CS, est_holding_torque(CS.out.steeringAngleDeg, CS.out.vEgoRaw, VM))
       apply_angle = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, self.VM)
@@ -171,6 +156,7 @@ class CoopSteeringCarController:
         apply_angle = lkas_compensation(apply_angle, self.apply_angle_last, CS.out.steeringAngleDeg,
                                                       CS.out.steeringTorque, CS.out.vEgoRaw)
     else:
+      self.time_since_user_engage = 0
       control_type = 1 # angle control mode
       lat_pause = False
       apply_angle = CC.actuators.steeringAngleDeg
