@@ -104,7 +104,7 @@ class CarControllerParams:
     # Vehicle model angle limits
     # Add extra tolerance for average banked road since safety doesn't have the roll
     MAX_LATERAL_ACCEL=ISO_LATERAL_ACCEL + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),  # ~3.6 m/s^2
-    MAX_LATERAL_JERK=5.0 + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),  # ~3.6 m/s^3
+    MAX_LATERAL_JERK=3.0 + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),  # ~3.6 m/s^3
 
     # limit angle rate to both prevent a fault and for low speed comfort (~12 mph rate down to 0 mph)
     MAX_ANGLE_RATE=10,  # deg per frame, EPS faults at 12 at a standstill
