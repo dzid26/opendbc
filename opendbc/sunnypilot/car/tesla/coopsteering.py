@@ -110,6 +110,7 @@ class LateralPauseState(Enum):
   INIT_WAIT = auto()
   NORMAL = auto()
   PAUSE = auto()
+  REENGAGE_HOLD_WAIT = auto()
   
   def __str__(self):
     return self.name
@@ -148,24 +149,39 @@ class CoopSteeringCarController:
       CS.out.vEgoRaw < STEER_PAUSE_ALLOW_SPEED
       and self.psm.state_time > STEER_PAUSE_WAIT_TIME
       and CS.out.steeringPressed
-      and torque_override
+      and torque_override # todo add small debounce
     )
     
-    # Disengage conditions (when to leave LATERAL_PAUSED)
-    should_reengage = (
-      CS.out.steeringRateDeg == 0
-      and not CS.out.steeringPressed
-      and not CS.out.standstill
+    # Reengage conditions when hands released steering wheel
+    should_reengage_released = (
+      not CS.out.steeringPressed
+      # and not CS.out.standstill
       and not should_disengage
     )
+
+    # Reengage conditions when hands holding steering wheel at desired controls angle for some time
+    should_hold_wait = (
+      CS.out.steeringRateDeg == 0
+      and CS.hands_on_level < 3
+      # and not CS.out.standstill
+    )
+    should_reengage_from_hold = (self.psm.state_time > 1 or should_reengage_released) \
+      and not should_disengage
 
     # State transitions
     if self.psm.state == LateralPauseState.INIT_WAIT and self.psm.state_time > STEER_PAUSE_WAIT_TIME:
       self.psm.update_state(LateralPauseState.NORMAL)
     elif self.psm.state == LateralPauseState.NORMAL and should_disengage:
       self.psm.update_state(LateralPauseState.PAUSE)
-    elif self.psm.state == LateralPauseState.PAUSE and should_reengage:
+    elif self.psm.state == LateralPauseState.PAUSE and should_reengage_released:
       self.psm.update_state(LateralPauseState.NORMAL)
+    elif self.psm.state == LateralPauseState.PAUSE and should_hold_wait:
+      self.psm.update_state(LateralPauseState.REENGAGE_HOLD_WAIT)
+    elif self.psm.state == LateralPauseState.REENGAGE_HOLD_WAIT and not should_hold_wait:
+      self.psm.update_state(LateralPauseState.PAUSE)
+    elif self.psm.state == LateralPauseState.REENGAGE_HOLD_WAIT and should_reengage_from_hold:
+      self.psm.update_state(LateralPauseState.NORMAL)
+
     self.psm.tick(DT_CTRL)
 
   def resume_steer_rate_limit_ramp(self, resume, apply_angle: float, apply_angle_last: float) -> float:
@@ -188,7 +204,7 @@ class CoopSteeringCarController:
     if self.enabled and CC.latActive:
       control_type = 2  # LKAS mode todo: use CAN parser enums
       self.update_pause_state(CS, VM)
-      lat_pause = self.psm.state == LateralPauseState.PAUSE
+      lat_pause = self.psm.state != LateralPauseState.NORMAL
       apply_angle = calc_override_angle(CC.actuators.steeringAngleDeg, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
       if control_type == 2: # LKAS
         apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
