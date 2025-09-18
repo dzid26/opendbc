@@ -15,7 +15,7 @@ from opendbc.sunnypilot.car import get_param
 from openpilot.common.params import Params
 
 LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completly off below
-LKAS_OVERRIDE_ON_SPEED = 6.7 # LKAS coop steering completly on above
+LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completly on above
 LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
 LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 
@@ -25,7 +25,7 @@ STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering m
 STEER_OVERRIDE_GAIN_LIMIT = 8 # stability and smoothness in angle control mode or LKAS low speed
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
-STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED
+STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0
 STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
 
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 100 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
@@ -75,7 +75,7 @@ def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angl
                          [LKAS_OVERRIDE_OFF_TORQUE, LKAS_OVERRIDE_ON_TORQUE],
                          [0, lkas_angle])
   
-  # get out of the way if below speed for LKAS coop steering
+  # get out of the way if below speed LKAS based torque blending
   if vEgo < LKAS_OVERRIDE_OFF_SPEED:
     lkas_angle = 0
 
