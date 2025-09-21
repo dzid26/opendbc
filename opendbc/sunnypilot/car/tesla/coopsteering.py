@@ -39,12 +39,12 @@ CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
 
 class CoopSteeringCarState:
   def __init__(self):
-    self.enabled = False
+    pass
 
   def controls_disengage_cond(self, ret: structs.CarState) -> bool:
-    self.enabled = Params().get_bool("TeslaCoopSteering")
-    
-    if self.enabled and ret.vEgo < STEER_PAUSE_ALLOW_SPEED:
+    enabled = Params().get_bool("TeslaCoopSteering")
+
+    if enabled and ret.vEgo < STEER_PAUSE_ALLOW_SPEED:
       # ignore hands on level when cooperative steering is enabled
       return ret.steeringDisengage # todo fix this
     return ret.steeringDisengage
@@ -139,7 +139,6 @@ class PauseStateManager:
 class CoopSteeringCarController:
   def __init__(self):
     super().__init__()
-    self.enabled = False
     self.coop_steering = CoopSteeringDataSP(False, False, 0)
     self.override_angle_accu = 0
     self.angle_rate_delta_lim = 0
@@ -191,7 +190,11 @@ class CoopSteeringCarController:
 
     self.psm.tick(DT_CTRL)
 
-  def apply_override_angle(self, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+  def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+    if not lat_active:
+      self.override_angle_accu = 0
+      return apply_angle
+
     angle_override = calc_override_angle(driverTorque, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
     angle_override_delta = calc_override_angle(np.clip(driverTorque, -STEER_OVERRIDE_MAX_TORQUE, STEER_OVERRIDE_MAX_TORQUE),
                                               vEgo, VM, STEER_OVERRIDE_MAX_LAT_JERK * DT_CTRL)
@@ -203,10 +206,14 @@ class CoopSteeringCarController:
 
     return apply_angle + angle_override + self.override_angle_accu
 
-  def steer_override_acc_limit(self, apply_angle: float, apply_angle_last: float, driverTorque: float) -> float:
+
+  def steer_override_acc_limit(self, lat_active: bool, apply_angle: float, apply_angle_last: float, driverTorque: float) -> float:
     """Acceleration limit when overriding - causes joystick effects at low speed and reduces fighting when resuming from pause"""
-    
-    max_angle_rate_delta = np.interp(abs(driverTorque), 
+    if not lat_active:
+      self.apply_angle_delta_last = 0
+      return apply_angle
+
+    max_angle_rate_delta = np.interp(abs(driverTorque),
                                [STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MAX_TORQUE],
                                [STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MIN_TORQUE, STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MAX_TORQUE])
 
@@ -214,47 +221,52 @@ class CoopSteeringCarController:
     max_angle_delta_delta = max_angle_rate_delta * DT_CTRL
     angle_delta_new = rate_limit(angle_delta, self.apply_angle_delta_last, -max_angle_delta_delta, max_angle_delta_delta)
     self.apply_angle_delta_last = angle_delta_new  # Update with the rate-limited delta
-    
+
     return apply_angle_last + angle_delta_new
 
-  def resume_steer_rate_limit_ramp(self, resume, apply_angle: float, apply_angle_last: float) -> float:
+  def resume_steer_rate_limit_ramp(self, lat_active, apply_angle: float, apply_angle_last: float) -> float:
     """Limits steering wheel acceleration when resuming steering after pause"""
-
-    if resume:
-      self.angle_rate_delta_lim = self.angle_rate_delta_lim + STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_CTRL
-      apply_angle_lim = rate_limit(apply_angle, apply_angle_last, -self.angle_rate_delta_lim, self.angle_rate_delta_lim)
-    else:
+    if not lat_active:
       # reset and bypass when paused
       self.angle_rate_delta_lim = 0
-      apply_angle_lim = apply_angle
+      return apply_angle
+
+    self.angle_rate_delta_lim = self.angle_rate_delta_lim + STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_CTRL
+    apply_angle_lim = rate_limit(apply_angle, apply_angle_last, -self.angle_rate_delta_lim, self.angle_rate_delta_lim)
 
     return apply_angle_lim
 
 
   def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
-    self.enabled = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
+    coopEnabled = get_param(CC_SP.params, "TeslaCoopSteering", "0") == "True"
+    lowSpeedPauseEnabled = get_param(CC_SP.params, "TeslaLowSpeedSteerPause", "0") == "True"
 
+    # Replicate carcontroller behaviour here to reset variables on all disengagments
+    lat_active = CC.latActive and CS.hands_on_level < 3
     apply_angle = CC.actuators.steeringAngleDeg
-    if self.enabled and CC.latActive:
-      control_type = 2  # LKAS mode todo: use CAN parser enums
+
+    if lowSpeedPauseEnabled and lat_active:
       self.update_pause_state(CS, VM)
-      lat_pause = False # self.psm.state != LateralPauseState.NORMAL
-      if not lat_pause:
-        apply_angle = self.apply_override_angle(apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
-        if control_type == 2: # LKAS
-          apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
-                                          CS.out.steeringTorque, CS.out.vEgoRaw)
-        apply_angle = self.steer_override_acc_limit(apply_angle, self.apply_angle_last, CS.out.steeringTorque)
-      else:
-        control_type = 0
-        self.apply_angle_delta_last = 0
-        self.override_angle_accu = 0
+      lat_pause = self.psm.state != LateralPauseState.NORMAL
     else:
       self.psm.update_state(LateralPauseState.INIT_WAIT)
-      control_type = 1 # angle control mode
       lat_pause = False
-      self.apply_angle_delta_last = 0
-      self.override_angle_accu = 0
+      control_type = 0
+
+    lat_active = lat_active and not lat_pause
+
+    # avoid sudden rotation on engagement
+    apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, self.apply_angle_last)
+
+    if coopEnabled:
+      control_type = 2  # LKAS mode;  todo: use CAN parser enums
+      apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+      if control_type == 2: # if LKAS mode
+        apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
+                                        CS.out.steeringTorque, CS.out.vEgoRaw)
+      # apply_angle = self.steer_override_acc_limit(lat_active, apply_angle, self.apply_angle_last, CS.out.steeringTorque)
+    else:
+      control_type = 1 # angle control mode
 
     self.coop_steering = CoopSteeringDataSP(control_type, lat_pause, apply_angle)
     return self.coop_steering
@@ -262,9 +274,4 @@ class CoopSteeringCarController:
   def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
     coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
 
-    # Replicate carcontroller behaviour here to apply steering wheel acceleration limit on all user hand overs
-    lat_active = CC.latActive and CS.hands_on_level < 3 and not coop_steering.lat_pause
-    apply_angle = coop_steering.steeringAngleDeg
-    apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, self.apply_angle_last)
-
-    return CoopSteeringDataSP(coop_steering.control_type, coop_steering.lat_pause, apply_angle)
+    return coop_steering
