@@ -23,14 +23,14 @@ LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
-STEER_OVERRIDE_MAX_LAT_JERK = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3
-STEER_OVERRIDE_GAIN_LIMIT = 8 # stability and smoothness in angle control mode or LKAS low speed
+STEER_OVERRIDE_MAX_LAT_JERK = 1.8 # m/s^3
+STEER_OVERRIDE_GAIN_LIMIT = 2 # stability and smoothness in angle control mode or LKAS low speed
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
-STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0
+STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
 STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
 
-STEER_RESUME_RATE_LIMIT_RAMP_RATE = 100 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
+STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
 STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MIN_TORQUE = 150 # deg/s/10ms at STEER_OVERRIDE_MIN_TORQUE - doesn't affect final angle above about 25kph
 STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MAX_TORQUE = 50 # deg/s/10ms at STEER_OVERRIDE_MAX_TORQUE - doesn't affect final angle above about 45kph
 
@@ -55,15 +55,21 @@ def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
   curvature = lat_accel / (max(1, v_ego) ** 2)  # 1/m
   return math.degrees(VM.get_steer_from_curvature(curvature, v_ego, 0))  # deg
 
-def calc_override_angle(driverTorque: float, vEgo: float, VM: VehicleModel, lat_accel) -> float:
+def apply_bounds(input: float, limit: float) -> float:
+  """Limit input to a range."""
+  return np.clip(input, -limit, limit)
+
+def apply_deadzone(input: float, deadzone: float) -> float:
+  """Apply deadzone to input."""
+  return input - apply_bounds(input, deadzone)
+
+
+def calc_override_angle(torque: float, vEgo: float, VM: VehicleModel, lat_accel) -> float:
   """Map driver torque to lateral acceleration and convert to steering angle."""
-  # ignore torque sensor offset and disturbances
-  steering_torque_with_deadzone = driverTorque - np.clip(driverTorque, -STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MIN_TORQUE)
-  
   # lateral acc is linear in respect to angle so it's fine to interpolate it with torque
   torque_to_angle = get_steer_from_lat_accel(lat_accel, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
   # limit the gain to prevent jerkiness and instability
-  override_angle_target = steering_torque_with_deadzone * min(torque_to_angle, STEER_OVERRIDE_GAIN_LIMIT)
+  override_angle_target = torque * min(torque_to_angle, STEER_OVERRIDE_GAIN_LIMIT)
 
   return override_angle_target
 
@@ -99,8 +105,8 @@ def est_holding_torque(steering_angle: float, vEgo: float, VM: VehicleModel):
   return torque
 
 def determine_torque_override(driver_torque: float, holding_torque: float) -> bool:
-  torque_override_outward = np.clip(holding_torque, -STEER_OVERRIDE_MAX_TORQUE, STEER_OVERRIDE_MAX_TORQUE)
-  
+  torque_override_outward = apply_bounds(holding_torque, STEER_OVERRIDE_MAX_TORQUE)
+
   if holding_torque > 0: # same sign as CS.out.steeringAngleDeg
     torque_override_left = -STEER_OVERRIDE_MIN_TORQUE
     torque_override_right = max(torque_override_outward, STEER_OVERRIDE_MIN_TORQUE)
@@ -195,12 +201,20 @@ class CoopSteeringCarController:
       self.override_angle_accu = 0
       return apply_angle
 
-    angle_override = calc_override_angle(driverTorque, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
-    angle_override_delta = calc_override_angle(np.clip(driverTorque, -STEER_OVERRIDE_MAX_TORQUE, STEER_OVERRIDE_MAX_TORQUE),
-                                              vEgo, VM, STEER_OVERRIDE_MAX_LAT_JERK * DT_CTRL)
-    # prevent windup in carcontroller:
-    angle_override_delta = np.clip(angle_override_delta, -CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE,
-                                                          CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
+    ## torque to position
+    # ignore torque sensor offset and disturbances
+    steering_torque_with_deadzone = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
+    angle_override = calc_override_angle(steering_torque_with_deadzone, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
+
+    ## torque to speed
+    steering_torque_with_deadzone_lim = apply_bounds(steering_torque_with_deadzone, STEER_OVERRIDE_TORQUE_RANGE)
+    rebound_torque = -self.override_angle_accu / CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX * STEER_OVERRIDE_TORQUE_RANGE
+
+    angle_override_delta = calc_override_angle(rebound_torque + steering_torque_with_deadzone_lim, vEgo, VM,
+                                              # clamp jerk to half of carcontroller rate limit since total torque can be 2x the 
+                                              min(STEER_OVERRIDE_MAX_LAT_JERK, CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK / 2) * DT_CTRL)
+    # prevents windup in carcontroller:
+    angle_override_delta = apply_bounds(angle_override_delta, CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
 
     self.override_angle_accu = self.override_angle_accu + angle_override_delta
 
