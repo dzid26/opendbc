@@ -32,7 +32,7 @@ STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TOR
 STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
 STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
 
-STEER_RESUME_RATE_LIMIT_RAMP_RATE = 0.01 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
+STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
 STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MIN_TORQUE = 150 # deg/s/10ms at STEER_OVERRIDE_MIN_TORQUE - doesn't affect final angle above about 25kph
 STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MAX_TORQUE = 50 # deg/s/10ms at STEER_OVERRIDE_MAX_TORQUE - doesn't affect final angle above about 45kph
 
@@ -157,15 +157,31 @@ class PauseStateManager:
     """ Update the time spent in the current state. """
     self.state_time += dt
 
+class SteerRateLimiter:
+  """Handles rate limiting of steering angle changes with a configurable rate."""
+  def __init__(self):
+    self.ramp_rate = 0
+    self.apply_angle_last = 0.0
+
+  def reset(self, apply_angle: float) -> None:
+    """Reset the rate limiter state with the given angle."""
+    self.apply_angle_last = apply_angle
+
+  def update(self, apply_angle: float, angle_delta_lim: float) -> float:
+    apply_angle_lim = rate_limit(apply_angle, self.apply_angle_last, -angle_delta_lim, angle_delta_lim)
+    self.apply_angle_last = apply_angle_lim
+    return apply_angle_lim
+
+
 class CoopSteeringCarController:
   def __init__(self):
     super().__init__()
-    self.desired_angle = 0
     self.coop_steering = CoopSteeringDataSP(False, False, 0)
     self.override_angle_accu = 0
     self.angle_rate_delta_lim = 0
     self.apply_angle_delta_last = 0
     self.psm = PauseStateManager()
+    self.resume_rate_limiter = SteerRateLimiter()
 
 
   def update_pause_state(self, CS: structs.CarState, VM: VehicleModel):
@@ -274,16 +290,16 @@ class CoopSteeringCarController:
 
     return apply_angle_last + angle_delta_new
 
-  def resume_steer_rate_limit_ramp(self, lat_active, apply_angle: float, apply_angle_last: float) -> float:
+  def resume_steer_rate_limit_ramp(self, lat_active: bool, apply_angle: float) -> float:
     """Limits steering wheel acceleration when resuming steering after pause"""
     if not lat_active:
       # reset and bypass when paused
       self.angle_rate_delta_lim = 0
+      self.resume_rate_limiter.reset(apply_angle)
       return apply_angle
 
     self.angle_rate_delta_lim = self.angle_rate_delta_lim + STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_CTRL
-    apply_angle_lim = rate_limit(apply_angle, apply_angle_last, -self.angle_rate_delta_lim, self.angle_rate_delta_lim)
-
+    apply_angle_lim = self.resume_rate_limiter.update(apply_angle, self.angle_rate_delta_lim)
     return apply_angle_lim
 
 
@@ -306,7 +322,7 @@ class CoopSteeringCarController:
     lat_active = lat_active and not lat_pause
 
     # avoid sudden rotation on engagement
-    apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, self.desired_angle)
+    apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle)
 
     if coopEnabled:
       control_type = 2  # LKAS mode;  todo: use CAN parser enums
@@ -324,7 +340,5 @@ class CoopSteeringCarController:
 
   def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
     coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
-
-    self.desired_angle = CC.actuators.steeringAngleDeg
 
     return coop_steering
