@@ -214,13 +214,18 @@ class CoopSteeringCarController:
 
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     if not lat_active:
-      self.override_angle_accu = 0
       return apply_angle
 
     ## torque to position
     # ignore torque sensor offset and disturbances
     steering_torque_with_deadzone = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
     angle_override = calc_override_angle(steering_torque_with_deadzone, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
+    return apply_angle + angle_override
+
+  def apply_override_angle_rate(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+    if not lat_active:
+      self.override_angle_accu = 0
+      return apply_angle
 
     ## torque to speed with rebound
     if self.override_angle_accu > 0:
@@ -228,7 +233,7 @@ class CoopSteeringCarController:
     elif self.override_angle_accu < 0:
       torque_shifted = driverTorque + STEER_OVERRIDE_MIN_TORQUE
     else:
-      torque_shifted = steering_torque_with_deadzone
+      torque_shifted = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
 
     angle_override_delta = calc_override_angle_delta(torque_shifted, vEgo, VM,
                                                     STEER_OVERRIDE_MAX_LAT_JERK if abs(torque_shifted) > 0
@@ -240,7 +245,7 @@ class CoopSteeringCarController:
     self.override_angle_accu = 0 if new_override_angle_accu * self.override_angle_accu < 0 else new_override_angle_accu
 
     # accumulate angle ramp
-    apply_angle += angle_override + self.override_angle_accu
+    apply_angle += self.override_angle_accu
 
     # prevent windup due to carcontroller angle saturation
     self.override_angle_accu -= apply_angle - apply_bounds(apply_angle, CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX)
@@ -301,6 +306,7 @@ class CoopSteeringCarController:
     if coopEnabled:
       control_type = 2  # LKAS mode;  todo: use CAN parser enums
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+      apply_angle = self.apply_override_angle_rate(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
       if control_type == 2: # if LKAS mode
         apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
                                         CS.out.steeringTorque, CS.out.vEgoRaw)
