@@ -24,7 +24,7 @@ STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
 STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness in angle control mode or LKAS low speed
-STEER_OVERRIDE_MAX_LAT_JERK = 1.0 # m/s^3
+STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3
 STEER_OVERRIDE_MAX_LAT_JERK_REBOUND = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3
 STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 200 # deg/s/Nm
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
@@ -234,6 +234,11 @@ class CoopSteeringCarController:
       torque_shifted = driverTorque + STEER_OVERRIDE_MIN_TORQUE
     else:
       torque_shifted = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
+
+    # (LKAS torque blending reduces torque when target is off center which causes large slow swings)
+    # effectively forces rebound for above LKAS enable speed and keeps angle accumulator at 0:
+    torque_shifted = np.interp(vEgo, [LKAS_OVERRIDE_OFF_SPEED, LKAS_OVERRIDE_ON_SPEED],
+                                     [torque_shifted, apply_bounds(torque_shifted, STEER_OVERRIDE_MIN_TORQUE)])
 
     angle_override_delta = calc_override_angle_delta(torque_shifted, vEgo, VM,
                                                     STEER_OVERRIDE_MAX_LAT_JERK if abs(torque_shifted) > 0
