@@ -166,6 +166,11 @@ static void tesla_rx_hook(const CANPacket_t *msg) {
     }
   }
 
+  if (msg->bus == 0U && msg->addr == 0x311U) {
+    bool high_beam_bit = (msg->data[6] & 0x40U) != 0U;  // Byte7 Bit6
+    mads_button_press = high_beam_bit ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+  }
+
   if (msg->bus == 2U) {
     // DAS_control
     if (msg->addr == 0x2b9U) {

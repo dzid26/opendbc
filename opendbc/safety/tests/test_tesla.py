@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
-from opendbc.car.tesla.values import CarControllerParams, TeslaSafetyFlags
+from opendbc.car.tesla.values import CarControllerParams, TeslaSafetyFlags, CANBUS
 from opendbc.car.tesla.carcontroller import get_safety_CP
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
@@ -446,6 +446,22 @@ class TestTeslaLongitudinalSafety(TestTeslaSafetyBase):
     self.assertFalse(self._tx(self._long_control_msg(set_speed=10, accel_limits=(-1.1, -0.6))))
     self.assertFalse(self._tx(self._long_control_msg(set_speed=0, accel_limits=(-0.6, -1.1))))
     self.assertFalse(self._tx(self._long_control_msg(set_speed=0, accel_limits=(-0.1, -0.1))))
+
+
+class TestTeslaVehicleBusSafety(TestTeslaSafetyBase):
+
+  LONGITUDINAL = False
+
+  def setUp(self):
+    super().setUp()
+    self.safety = libsafety_py.libsafety
+    self.packer_adas = CANPackerPanda("tesla_model3_vehicle")
+    self.safety.set_safety_hooks(CarParams.SafetyModel.tesla, 0)
+    self.safety.init_tests()
+
+  def _lkas_button_msg(self, enabled):
+    values = {"highBeam": 1 if enabled else 0}
+    return self.packer_adas.make_can_msg_panda("UI_warning", CANBUS.party, values)
 
 
 if __name__ == "__main__":
