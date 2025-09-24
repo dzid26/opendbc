@@ -23,10 +23,10 @@ LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
-STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness in angle control mode or LKAS low speed
-STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3
-STEER_OVERRIDE_MAX_LAT_JERK_REBOUND = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3
-STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 200 # deg/s/Nm
+STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness for angle control
+STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - for low speed angle ramping
+STEER_OVERRIDE_MAX_LAT_JERK_REBOUND = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
+STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 200 # deg/s/Nm stability and smoothness for angle ramp control
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
 STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
@@ -69,7 +69,7 @@ def apply_deadzone(input: float, deadzone: float) -> float:
 
 def calc_override_angle(torque: float, vEgo: float, VM: VehicleModel, lat_accel) -> float:
   """Map driver torque to lateral acceleration and convert to steering angle."""
-  # lateral acc is linear in respect to angle so it's fine to interpolate it with torque
+  # lateral accel is linear in respect to angle so it's fine to interpolate it with torque
   torque_to_angle = get_steer_from_lat_accel(lat_accel, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
   # limit the gain to prevent jerkiness and instability
   override_angle_target = torque * min(torque_to_angle, STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT)
@@ -81,7 +81,7 @@ def calc_override_angle_delta(torque: float, vEgo: float, VM: VehicleModel, lat_
   # prevents windup in carcontroller rate limiter
   lat_jerk = min(lat_jerk, CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK)
 
-  # lateral acc is linear in respect to angle so it's fine to interpolate it with torque
+  # lateral accel is linear in respect to angle so it's fine to interpolate it with torque
   torque_to_angle = get_steer_from_lat_accel(lat_jerk, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
   # limit the gain to prevent jerkiness and instability
   override_angle_rate = torque * min(torque_to_angle, STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT)
@@ -244,6 +244,7 @@ class CoopSteeringCarController:
     return lat_pause
 
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+    """ Emulates steering resistance based on lateral acceleration exerted on the steering rack"""
     if not lat_active:
       return apply_angle
 
@@ -253,7 +254,13 @@ class CoopSteeringCarController:
     angle_override = calc_override_angle(steering_torque_with_deadzone, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
     return apply_angle + angle_override
 
-  def apply_override_angle_rate(self, lat_active: bool, lkas_enabled: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+  def apply_override_angle_ramp(self, lat_active: bool, lkas_enabled: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+    """
+    Emulates steering rotation for low speed when steering resistance due to lateral acceleration is not well defined.
+    Physically torque to angle rate corresponds to viscous damping of the wheels on the ground.
+    However here lateral jerk limit is used as a proxy for estimating reasonable safe steering angle rate depending on the vehicle speed.
+    Ramp max angle is limited such all angle overrides don't exceed Carcontroller max lateral acceleration.
+    """
     if not lat_active:
       self.override_angle_accu = 0
       return apply_angle
@@ -349,7 +356,7 @@ class CoopSteeringCarController:
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
       if not low_speed_pause_enabled:
         # todo maybe keep it always enabled at high speed for consistent behavior
-        apply_angle = self.apply_override_angle_rate(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+        apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
 
       if lkas_enabled:  # apply LKAS compensation to angle override
         apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
