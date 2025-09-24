@@ -178,10 +178,11 @@ class CoopSteeringCarController:
     super().__init__()
     self.coop_steering = CoopSteeringDataSP(False, False, 0)
     self.override_angle_accu = 0
-    self.angle_rate_delta_lim = 0
     self.psm = PauseStateManager()
+    self.resume_rate_limiter_delta = SteerRateLimiter()
     self.resume_rate_limiter = SteerRateLimiter()
     self.override_acc_rate_limiter_delta = SteerRateLimiter()
+    self.override_acc_rate_limiter = SteerRateLimiter()
 
 
   def update_pause_state(self, CS: structs.CarState, VM: VehicleModel):
@@ -278,29 +279,29 @@ class CoopSteeringCarController:
     """Acceleration limit when overriding"""
     if not lat_active:
       self.override_acc_rate_limiter_delta.reset(0)
+      self.override_acc_rate_limiter.reset(apply_angle)
       return apply_angle
 
     max_angle_rate_delta = np.interp(abs(driverTorque),
                                [STEER_OVERRIDE_MIN_TORQUE, STEER_OVERRIDE_MAX_TORQUE],
                                [STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MIN_TORQUE, STEER_OVERRIDE_ANGLE_RATE_DELTA_AT_MAX_TORQUE])
+    angle_delta = apply_angle - self.override_acc_rate_limiter.apply_angle_last
+    angle_delta_new = self.override_acc_rate_limiter_delta.update(angle_delta, max_angle_rate_delta * DT_CTRL)
+    apply_angle = self.override_acc_rate_limiter.update(apply_angle, angle_delta_new)
 
-    angle_delta = apply_angle - apply_angle_last
-    # todo only limit acceleration when speed magnitude increases
-    max_angle_delta_delta = max_angle_rate_delta * DT_CTRL
-    angle_delta_new = self.override_acc_rate_limiter_delta.update(angle_delta, max_angle_delta_delta)
-
-    return apply_angle_last + angle_delta_new
+    return apply_angle
 
   def resume_steer_rate_limit_ramp(self, lat_active: bool, apply_angle: float, steering_angle: float) -> float:
     """Limits steering wheel acceleration when resuming steering after pause"""
     if not lat_active:
       # reset and bypass when paused
-      self.angle_rate_delta_lim = 0
+      self.resume_rate_limiter_delta.reset(0)
       self.resume_rate_limiter.reset(steering_angle)
       return apply_angle
 
-    self.angle_rate_delta_lim = self.angle_rate_delta_lim + STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_CTRL
-    apply_angle_lim = self.resume_rate_limiter.update(apply_angle, self.angle_rate_delta_lim)
+    angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK,
+                                                         STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_CTRL)
+    apply_angle_lim = self.resume_rate_limiter.update(apply_angle, angle_rate_delta_lim)
     return apply_angle_lim
 
 
@@ -329,7 +330,7 @@ class CoopSteeringCarController:
     apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, CS.out.steeringAngleDeg)
 
     if angle_coop_enabled:
-      # apply_angle = self.steer_override_acc_limit(lat_active, apply_angle, self.apply_angle_last, CS.out.steeringTorque)
+      apply_angle = self.steer_override_acc_limit(lat_active, apply_angle, self.apply_angle_last, CS.out.steeringTorque)
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
       apply_angle = self.apply_override_angle_rate(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
 
