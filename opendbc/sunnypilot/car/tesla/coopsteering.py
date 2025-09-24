@@ -146,6 +146,9 @@ class PauseStateManager:
     self.state = LateralPauseState.INIT_WAIT
     self.state_time = 0.0
 
+  def reset_time(self):
+    self.state_time = 0.0
+
   def update_state(self, new_state: LateralPauseState):
     """ Update the state of the pause state machine and reset timer. """
     if self.state != new_state:
@@ -156,6 +159,9 @@ class PauseStateManager:
   def tick(self, dt: float):
     """ Update the time spent in the current state. """
     self.state_time += dt
+
+  def time_in_state(self) -> float:
+    return self.state_time
 
 class SteerRateLimiter:
   """Handles rate limiting of steering angle changes with a configurable rate."""
@@ -184,6 +190,9 @@ class CoopSteeringCarController:
     self.override_acc_rate_limiter_delta = SteerRateLimiter()
     self.override_acc_rate_limiter = SteerRateLimiter()
 
+  def reset_pause_state(self):
+    self.psm.update_state(LateralPauseState.INIT_WAIT)
+    self.psm.reset_time()
 
   def update_pause_state(self, CS: structs.CarState, VM: VehicleModel):
     torque_hold = est_holding_torque(CS.out.steeringAngleDeg, CS.out.vEgoRaw, VM)
@@ -192,7 +201,7 @@ class CoopSteeringCarController:
     # Engage conditions (when to enter or stay in LATERAL_PAUSED)
     should_disengage = (
       CS.out.vEgoRaw < STEER_PAUSE_ALLOW_SPEED
-      and self.psm.state_time > STEER_PAUSE_WAIT_TIME
+      and self.psm.time_in_state() > STEER_PAUSE_WAIT_TIME
       and CS.out.steeringPressed
       and torque_override # todo add small debounce
     )
@@ -210,11 +219,11 @@ class CoopSteeringCarController:
       and CS.hands_on_level < 3
       # and not CS.out.standstill
     )
-    should_reengage_from_hold = (self.psm.state_time > 1 or should_reengage_released) \
+    should_reengage_from_hold = (self.psm.time_in_state() > 1.0 or should_reengage_released) \
       and not should_disengage
 
     # State transitions
-    if self.psm.state == LateralPauseState.INIT_WAIT and self.psm.state_time > STEER_PAUSE_WAIT_TIME:
+    if self.psm.state == LateralPauseState.INIT_WAIT and self.psm.time_in_state() > STEER_PAUSE_WAIT_TIME:
       self.psm.update_state(LateralPauseState.NORMAL)
     elif self.psm.state == LateralPauseState.NORMAL and should_disengage:
       self.psm.update_state(LateralPauseState.PAUSE)
@@ -228,6 +237,10 @@ class CoopSteeringCarController:
       self.psm.update_state(LateralPauseState.NORMAL)
 
     self.psm.tick(DT_CTRL)
+
+    lat_pause = self.psm.state == LateralPauseState.PAUSE \
+        or self.psm.state == LateralPauseState.REENGAGE_HOLD_WAIT
+    return lat_pause
 
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     if not lat_active:
@@ -318,10 +331,9 @@ class CoopSteeringCarController:
     control_type = 2 if lkas_enabled else 1
 
     if low_speed_pause_enabled and lat_active:
-      self.update_pause_state(CS, VM)
-      lat_pause = self.psm.state != LateralPauseState.NORMAL
+      lat_pause = self.update_pause_state(CS, VM)
     else:
-      self.psm.update_state(LateralPauseState.INIT_WAIT)
+      self.reset_pause_state()
       lat_pause = False
 
     lat_active = lat_active and not lat_pause
