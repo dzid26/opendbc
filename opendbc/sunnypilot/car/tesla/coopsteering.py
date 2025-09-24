@@ -244,7 +244,11 @@ class CoopSteeringCarController:
     return lat_pause
 
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
-    """ Emulates steering resistance based on lateral acceleration exerted on the steering rack"""
+    """
+    Emulates steering springiness based on lateral acceleration exerted on the steering rack.
+    At low speed the max angle approaches infinity, so the conversion torque to angle has to be limited (STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT).
+    We rely on apply_override_angle_ramp to reach the max angle at low speeds.
+    """
     if not lat_active:
       return apply_angle
 
@@ -259,7 +263,7 @@ class CoopSteeringCarController:
     Emulates steering rotation for low speed when steering resistance due to lateral acceleration is not well defined.
     Physically torque to angle rate corresponds to viscous damping of the wheels on the ground.
     However here lateral jerk limit is used as a proxy for estimating reasonable safe steering angle rate depending on the vehicle speed.
-    Ramp max angle is limited such all angle overrides don't exceed Carcontroller max lateral acceleration.
+    Ramp maximum angle is limited according to lateral acceleration limits.
     """
     if not lat_active:
       self.override_angle_accu = 0
@@ -288,13 +292,16 @@ class CoopSteeringCarController:
     # clamp to 0 if sign changes
     self.override_angle_accu = 0 if new_override_angle_accu * self.override_angle_accu < 0 else new_override_angle_accu
 
-    # accumulate angle ramp
+    # steering should rotate until reaches angle set by the desired max lat accel
+    self.override_angle_accu = apply_bounds(self.override_angle_accu,
+                                            get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM))
+
     apply_angle = apply_angle + self.override_angle_accu
 
-    # prevent windup due to carcontroller angle saturation
-    total_max_angle = min(CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX, # 360deg
+    # predict and prevent windup due to Carcontroller angle saturation
+    absolute_max_angle = min(CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX, # 360deg
                           get_steer_from_lat_accel(CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_ACCEL, vEgo, VM))
-    angle_saturation_delta = apply_angle - apply_bounds(apply_angle, total_max_angle)
+    angle_saturation_delta = apply_angle - apply_bounds(apply_angle, absolute_max_angle)
     self.override_angle_accu -= angle_saturation_delta
     return apply_angle
 
