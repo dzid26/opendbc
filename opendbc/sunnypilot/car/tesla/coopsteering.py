@@ -289,10 +289,13 @@ class CoopSteeringCarController:
     self.override_angle_accu = 0 if new_override_angle_accu * self.override_angle_accu < 0 else new_override_angle_accu
 
     # accumulate angle ramp
-    apply_angle += self.override_angle_accu
+    apply_angle = apply_angle + self.override_angle_accu
 
     # prevent windup due to carcontroller angle saturation
-    self.override_angle_accu -= apply_angle - apply_bounds(apply_angle, CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX)
+    total_max_angle = min(CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX, # 360deg
+                          get_steer_from_lat_accel(CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_ACCEL, vEgo, VM))
+    angle_saturation_delta = apply_angle - apply_bounds(apply_angle, total_max_angle)
+    self.override_angle_accu -= angle_saturation_delta
     return apply_angle
 
 
