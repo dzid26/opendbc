@@ -371,14 +371,14 @@ class CoopSteeringCarController:
     if angle_coop_enabled:
       apply_angle = self.steer_desired_accel_limit_for_override(lat_active, apply_angle, CS.out.steeringAngleDeg,
                                                                 self.override_angle_accu != 0)
-      apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+      apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
       if not low_speed_pause_enabled:
         # todo maybe keep it always enabled at high speed for consistent behavior
-        apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgoRaw, VM)
+        apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
 
       if lkas_enabled:  # apply LKAS compensation to angle override
         apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
-                                        CS.out.steeringTorque, CS.out.vEgoRaw)
+                                        CS.out.steeringTorque, CS.out.vEgo)
 
     self.coop_steering = CoopSteeringDataSP(control_type, lat_pause, apply_angle)
     return self.coop_steering
