@@ -301,7 +301,10 @@ class CoopSteeringCarController:
     # ramp the angle
     new_override_angle_accu = self.override_angle_accu + angle_override_delta
     # clamp to 0 if sign changes
-    self.override_angle_accu = 0 if new_override_angle_accu * self.override_angle_accu < 0 else new_override_angle_accu
+    if new_override_angle_accu * self.override_angle_accu < 0 and abs(driverTorque) < STEER_OVERRIDE_MIN_TORQUE:
+      self.override_angle_accu = 0
+    else:
+      self.override_angle_accu = new_override_angle_accu
 
     # steering should rotate until reaches angle set by the desired max lat accel
     self.override_angle_accu = apply_bounds(self.override_angle_accu,
