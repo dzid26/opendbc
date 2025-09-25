@@ -22,11 +22,12 @@ LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
-STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - similar to Tesla comfort steering mode
+STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - determines angle rate - speed dependant - similar to Tesla comfort steering mode
 STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness for angle control
-STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - for low speed angle ramping
+STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - speed dependant
 STEER_OVERRIDE_MAX_LAT_JERK_REBOUND = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
-STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 200 # deg/s/Nm stability and smoothness for angle ramp control
+# todo implement steering torque inertia compensation to increase gains
+STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 150 # deg/s/Nm stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
 STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
@@ -251,7 +252,7 @@ class CoopSteeringCarController:
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
     Emulates steering springiness based on lateral acceleration exerted on the steering rack.
-    At low speed the max angle approaches infinity, so the conversion torque to angle has to be limited (STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT).
+    At low speed the max angle approaches infinity, so the conversion torque to angle has to be limited (STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT).
     We rely on apply_override_angle_ramp to reach the max angle at low speeds.
     """
     if not lat_active:
