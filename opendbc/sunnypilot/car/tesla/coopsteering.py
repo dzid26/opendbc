@@ -120,14 +120,19 @@ def est_holding_torque(steering_angle: float, vEgo: float, VM: VehicleModel):
   torque = lat_accel / STEER_OVERRIDE_MAX_LAT_ACCEL * STEER_OVERRIDE_TORQUE_RANGE
   return torque
 
-def determine_torque_override(driver_torque: float, holding_torque: float) -> bool:
-  torque_override_outward = apply_bounds(holding_torque, STEER_OVERRIDE_MAX_TORQUE)
+def override_above_holding_torque(driver_torque: float, holding_torque: float) -> bool:
+  """
+  Determines whether override torque is enough to hold the steering wheel in place (outward)
+  Or if input is above min torque threshold (inward)
+  """
+  # if above max torque, then always determine the override
+  holding_torque_limited = apply_bounds(holding_torque, STEER_OVERRIDE_MAX_TORQUE)
 
-  if holding_torque > 0: # same sign as CS.out.steeringAngleDeg
+  if holding_torque_limited > 0: # same sign as CS.out.steeringAngleDeg
     torque_override_left = -STEER_OVERRIDE_MIN_TORQUE
-    torque_override_right = max(torque_override_outward, STEER_OVERRIDE_MIN_TORQUE)
+    torque_override_right = max(holding_torque_limited, STEER_OVERRIDE_MIN_TORQUE)
   else:
-    torque_override_left = min(torque_override_outward, -STEER_OVERRIDE_MIN_TORQUE)
+    torque_override_left = min(holding_torque_limited, -STEER_OVERRIDE_MIN_TORQUE)
     torque_override_right = STEER_OVERRIDE_MIN_TORQUE
 
   return not (torque_override_left <= driver_torque <= torque_override_right)
@@ -197,7 +202,7 @@ class CoopSteeringCarController:
 
   def update_pause_state(self, CS: structs.CarState, VM: VehicleModel):
     torque_hold = est_holding_torque(CS.out.steeringAngleDeg, CS.out.vEgoRaw, VM)
-    torque_override = determine_torque_override(CS.out.steeringTorque, torque_hold)
+    torque_override = override_above_holding_torque(CS.out.steeringTorque, torque_hold)
 
     # Engage conditions (when to enter or stay in LATERAL_PAUSED)
     should_disengage = (
