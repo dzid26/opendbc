@@ -25,7 +25,7 @@ STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS take
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - determines angle rate - speed dependant - similar to Tesla comfort steering mode
 STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness for angle control
 STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - speed dependant
-STEER_OVERRIDE_MAX_LAT_JERK_REBOUND = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
+STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
 # todo implement steering torque inertia compensation to increase gains
 STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 150 # deg/s/Nm stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
@@ -290,10 +290,10 @@ class CoopSteeringCarController:
     else:
       torque_biased = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
 
-
+    # higher rate when centering
     angle_override_delta = calc_override_angle_delta(torque_biased, vEgo, VM,
-                                                    STEER_OVERRIDE_MAX_LAT_JERK if abs(torque_biased) > 0
-                                                    else STEER_OVERRIDE_MAX_LAT_JERK_REBOUND)
+                          STEER_OVERRIDE_MAX_LAT_JERK if torque_biased * self.override_angle_accu > 0
+                          else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
 
     # ramp the angle
     new_override_angle_accu = self.override_angle_accu + angle_override_delta
