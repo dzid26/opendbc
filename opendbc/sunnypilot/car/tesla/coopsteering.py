@@ -31,11 +31,14 @@ STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 150 # deg/s/Nm stability and smoothness for
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 
 STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
+
 STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
 
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
 
-STEER_OVERRIDE_RAMP_ANGLE_RATE_DELTA = 50 # deg/s/10ms when override angle ramp is active - 50deg/s/10ms takes 200ms to reach MAX_ANGLE_RATE
+# model fighting mitigation
+STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this speed the desired angle limiter is active
+STEER_DESIRED_LIMITER_RATE_DELTA = 50 # deg/s/10ms when override angle ramp is active - 50deg/s/10ms takes 200ms to reach MAX_ANGLE_RATE
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -322,7 +325,7 @@ class CoopSteeringCarController:
       return apply_angle
 
     if override_active:
-      max_angle_rate_delta = STEER_OVERRIDE_RAMP_ANGLE_RATE_DELTA
+      max_angle_rate_delta = STEER_DESIRED_LIMITER_RATE_DELTA
     else:
       max_angle_rate_delta = CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_CTRL
     angle_delta = apply_angle - self.override_accel_rate_limiter.apply_angle_last
@@ -370,7 +373,7 @@ class CoopSteeringCarController:
 
     if angle_coop_enabled:
       apply_angle = self.steer_desired_accel_limit_for_override(lat_active, apply_angle, CS.out.steeringAngleDeg,
-                                                                self.override_angle_accu != 0)
+                                        self.override_angle_accu != 0 and CS.out.vEgo < STEER_DESIRED_LIMITER_ALLOW_SPEED)
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
       if not low_speed_pause_enabled:
         # todo maybe keep it always enabled at high speed for consistent behavior
