@@ -275,6 +275,13 @@ class CoopSteeringCarController:
       self.override_angle_accu = 0
       return apply_angle
 
+    # disable ramping at high speed -
+    # prevents large slow swings due to LKAS reducing input resistance when target is off center;
+    # limits torque to minimum so it allows ramping down the angle if already extended
+    if lkas_enabled:
+      driverTorque = np.interp(vEgo, [LKAS_OVERRIDE_OFF_SPEED, LKAS_OVERRIDE_ON_SPEED],
+              [driverTorque, apply_bounds(driverTorque, STEER_OVERRIDE_MIN_TORQUE)])
+
     # torque biasing emulates the steering centering:
     if self.override_angle_accu > 0:
       torque_biased = driverTorque - STEER_OVERRIDE_MIN_TORQUE
@@ -283,11 +290,6 @@ class CoopSteeringCarController:
     else:
       torque_biased = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
 
-    # prevent large slow swings due to LKAS reducing input resistance when target is off center
-    # effectively forces rebound for above LKAS enable speed and keeps angle accumulator at 0:
-    if lkas_enabled:
-      torque_biased = np.interp(vEgo, [LKAS_OVERRIDE_OFF_SPEED, LKAS_OVERRIDE_ON_SPEED],
-              [torque_biased, apply_bounds(torque_biased, STEER_OVERRIDE_MIN_TORQUE)])
 
     angle_override_delta = calc_override_angle_delta(torque_biased, vEgo, VM,
                                                     STEER_OVERRIDE_MAX_LAT_JERK if abs(torque_biased) > 0
