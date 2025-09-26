@@ -10,18 +10,22 @@ from opendbc.car import Bus, create_button_events, structs
 from opendbc.can.parser import CANParser
 from opendbc.car.tesla.values import DBC, CANBUS
 from opendbc.sunnypilot.car.tesla.values import TeslaFlagsSP
+from opendbc.sunnypilot.car.tesla.coopsteering import CoopSteeringCarState
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
 
-class CarStateExt:
+class CarStateExt(CoopSteeringCarState):
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP):
     self.CP = CP
     self.CP_SP = CP_SP
+    CoopSteeringCarState.__init__(self)
 
     self.infotainment_3_finger_press = 0
 
   def update(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
+    # ret.steeringDisengage = self.controls_disengage_cond(ret)
+
     if self.CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS:
       cp_adas = can_parsers[Bus.adas]
 
