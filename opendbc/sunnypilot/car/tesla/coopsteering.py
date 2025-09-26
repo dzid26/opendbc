@@ -20,12 +20,14 @@ LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completely on above
 LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
 LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
 
+STEER_OVERRIDE_LOW_SPEED_LO = LKAS_OVERRIDE_OFF_SPEED
+STEER_OVERRIDE_LOW_SPEED_HI = LKAS_OVERRIDE_ON_SPEED
 
 # angle override # todo implement steering torque inertia compensation to increase gains
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - determines angle rate - speed dependant - similar to Tesla comfort steering mode
-STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness for angle control
+STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 10 # deg/Nm stability and smoothness for angle control
 # angle ramping
 STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - speed dependant
 STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
@@ -69,8 +71,12 @@ def calc_override_angle(torque: float, vEgo: float, VM: VehicleModel, lat_accel)
   """Map driver torque to lateral acceleration and convert to steering angle."""
   # lateral accel is linear in respect to angle so it's fine to interpolate it with torque
   torque_to_angle = get_steer_from_lat_accel(lat_accel, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
+
+  # disable angle override below low speed # todo this could be removed after fixing stability issues
+  gain = np.interp(vEgo, [STEER_OVERRIDE_LOW_SPEED_LO, STEER_OVERRIDE_LOW_SPEED_HI],
+                         [0, STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT])
   # limit the gain to prevent jerkiness and instability
-  override_angle_target = torque * min(torque_to_angle, STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT)
+  override_angle_target = torque * min(torque_to_angle, gain)
 
   return override_angle_target
 
@@ -204,7 +210,7 @@ class CoopSteeringCarController:
 
     # Engage conditions (when to enter or stay in LATERAL_PAUSED)
     should_disengage = (
-      CS.out.vEgoRaw < STEER_PAUSE_ALLOW_SPEED
+      CS.out.vEgoRaw < STEER_PAUSE_ALLOW_SPEED # todo add hysteresis
       and self.psm.time_in_state() > STEER_PAUSE_WAIT_TIME
       and CS.out.steeringPressed
       and torque_override # todo add small debounce
