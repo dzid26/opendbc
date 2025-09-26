@@ -44,6 +44,7 @@ STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of a
 # steer pause logic
 STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
 STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
+STEER_PAUSE_HOLD_TARGET_DEVIATION = 10 # deg - wait time before disengaging after engagement with a stalk
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -204,7 +205,7 @@ class CoopSteeringCarController:
     self.psm.update_state(LateralPauseState.INIT_WAIT)
     self.psm.reset_time()
 
-  def update_pause_state(self, CS: structs.CarState, VM: VehicleModel):
+  def update_pause_state(self, angle_planned: float, CS: structs.CarState, VM: VehicleModel):
     torque_hold = est_holding_torque(CS.out.steeringAngleDeg, CS.out.vEgoRaw, VM)
     torque_override = override_above_holding_torque(CS.out.steeringTorque, torque_hold)
 
@@ -214,6 +215,7 @@ class CoopSteeringCarController:
       and self.psm.time_in_state() > STEER_PAUSE_WAIT_TIME
       and CS.out.steeringPressed
       and torque_override # todo add small debounce
+      and abs(CS.out.steeringAngleDeg - angle_planned) < STEER_PAUSE_HOLD_TARGET_DEVIATION
     )
 
     # Reengage conditions when hands released steering wheel
@@ -364,7 +366,7 @@ class CoopSteeringCarController:
     control_type = 2 if lkas_enabled else 1
 
     if low_speed_pause_enabled and lat_active:
-      lat_pause = self.update_pause_state(CS, VM)
+      lat_pause = self.update_pause_state(apply_angle, CS, VM)
     else:
       self.reset_pause_state()
       lat_pause = False
