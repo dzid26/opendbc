@@ -24,7 +24,7 @@ class CarStateExt(CoopSteeringCarState):
     self.infotainment_3_finger_press = 0
 
   def update(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
-    ret.steeringDisengage = self.controls_disengage_cond(ret)
+    # ret.steeringDisengage = self.controls_disengage_cond(ret)
 
     if self.CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS:
       cp_adas = can_parsers[Bus.adas]

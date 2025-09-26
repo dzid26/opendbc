@@ -15,30 +15,33 @@ from opendbc.sunnypilot.car import get_param
 from openpilot.common.params import Params
 from opendbc.car.tesla.values import CarControllerParams
 
-LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completly off below
-LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completly on above
-LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
+LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completely off below
+LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completely on above
 LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
+LKAS_OVERRIDE_ON_TORQUE = 2.0 # LKAS coop usually On above this torque
 
+
+# angle override # todo implement steering torque inertia compensation to increase gains
 STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages, LKAS takes over at 1.8Nm
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - determines angle rate - speed dependant - similar to Tesla comfort steering mode
 STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 5 # deg/Nm stability and smoothness for angle control
+# angle ramping
 STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - speed dependant
 STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
-# todo implement steering torque inertia compensation to increase gains
 STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 150 # deg/s/Nm stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
-
-STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
-
-STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
-
-STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
 
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this speed the desired angle limiter is active
 STEER_DESIRED_LIMITER_RATE_DELTA = 50 # deg/s/10ms when override angle ramp is active - 50deg/s/10ms takes 200ms to reach MAX_ANGLE_RATE
+
+# limit model acceleration when engaging or resuming from pause
+STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
+
+# steer pause logic
+STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
+STEER_PAUSE_WAIT_TIME = 0.5 # s - wait time before disengaging after engagement with a stalk
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -47,15 +50,6 @@ CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
 class CoopSteeringCarState:
   def __init__(self):
     pass
-
-  def controls_disengage_cond(self, ret: structs.CarState) -> bool:
-    enabled = Params().get_bool("TeslaCoopSteering")
-
-    if enabled and ret.vEgo < STEER_PAUSE_ALLOW_SPEED:
-      # ignore hands on level when cooperative steering is enabled
-      return ret.steeringDisengage # todo fix this
-    return ret.steeringDisengage
-
 
 def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
   """Calculate the maximum steering angle based on lateral acceleration."""
