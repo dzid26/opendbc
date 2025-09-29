@@ -14,6 +14,8 @@ from opendbc.car.vehicle_model import VehicleModel
 from opendbc.sunnypilot.car import get_param
 from opendbc.car.tesla.values import CarControllerParams
 
+STEERING_DEG_PHASE_LEAD_COEFF = 8.0
+
 LKAS_OVERRIDE_OFF_SPEED = 6.0 # LKAS coop steering completely off below
 LKAS_OVERRIDE_ON_SPEED = 7.0 # LKAS coop steering completely on above
 LKAS_OVERRIDE_OFF_TORQUE = 1.3 # LKAS coop usually Off below this torque
@@ -362,6 +364,9 @@ class CoopSteeringCarController:
     return apply_angle_lim
 
   def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
+    # estimate real steering angle by adding rate to the tesla filtered angle
+    steeringAngleDegPhaseLead = CS.out.steeringAngleDeg + CS.out.steeringRateDeg / STEERING_DEG_PHASE_LEAD_COEFF
+
     lkas_enabled = get_param(CC_SP.params, "TeslaLkasSteering", False)
     angle_coop_enabled = get_param(CC_SP.params, "TeslaCoopSteering", False)
     low_speed_pause_enabled = get_param(CC_SP.params, "TeslaLowSpeedSteerPause", False)
@@ -382,7 +387,7 @@ class CoopSteeringCarController:
     lat_active = lat_active and not lat_pause
 
     # avoid sudden rotation on engagement
-    apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, CS.out.steeringAngleDeg)
+    apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, steeringAngleDegPhaseLead)
 
     if angle_coop_enabled:
       apply_angle = self.steer_desired_accel_limit_for_override(lat_active, apply_angle, CS.out.steeringAngleDeg,
@@ -393,7 +398,7 @@ class CoopSteeringCarController:
         apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
 
       if lkas_enabled:  # apply LKAS compensation to angle override
-        apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, CS.out.steeringAngleDeg,
+        apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, steeringAngleDegPhaseLead,
                                         CS.out.steeringTorque, CS.out.vEgo)
 
     self.coop_steering = CoopSteeringDataSP(control_type, lat_pause, apply_angle)
