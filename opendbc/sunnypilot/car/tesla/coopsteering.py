@@ -38,10 +38,10 @@ STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TOR
 
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this speed the desired angle limiter is active
-STEER_DESIRED_LIMITER_RATE_DELTA = 50 # deg/s/10ms when override angle ramp is active
+STEER_DESIRED_LIMITER_RATE_DELTA = 10 # deg/s/10ms when override angle ramp is active
 
 # limit model acceleration when engaging or resuming from pause
-STEER_RESUME_RATE_LIMIT_RAMP_RATE = 10 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
+STEER_RESUME_RATE_LIMIT_RAMP_RATE = 5 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
 
 # steer pause logic
 STEER_PAUSE_ALLOW_SPEED = LKAS_OVERRIDE_ON_SPEED + 1.0 # enabling for higher speed can be dangerous if accidentally triggered
@@ -188,7 +188,6 @@ class PauseStateManager:
 class SteerRateLimiter:
   """Handles rate limiting of steering angle changes with a configurable rate."""
   def __init__(self):
-    self.ramp_rate = 0
     self.apply_angle_last = 0.0
 
   def reset(self, apply_angle: float) -> None:
@@ -333,20 +332,25 @@ class CoopSteeringCarController:
     self.override_angle_accu -= angle_saturation_delta
     return apply_angle
 
-  def steer_desired_accel_limit_for_override(self, lat_active: bool, apply_angle: float, steering_angle: float, override_active: bool) -> float:
-    """Acceleration limit angle override is active"""
+  def steer_desired_accel_limit_for_override(self, lat_active: bool, apply_angle: float, override_active: bool) -> float:
+    """
+    Acceleration rate limiter - limits acceleration but allows for quick deceleration (no overshoot)
+    """
     if not lat_active:
       self.override_accel_rate_limiter_delta.reset(0)
       self.override_accel_rate_limiter.reset(apply_angle)
       return apply_angle
 
+    max_angle_delta = CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE
     if override_active:
       max_angle_rate_delta = STEER_DESIRED_LIMITER_RATE_DELTA
     else:
-      max_angle_rate_delta = CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_CTRL
+      max_angle_rate_delta = max_angle_delta / DT_CTRL
     angle_delta = apply_angle - self.override_accel_rate_limiter.apply_angle_last
+    angle_delta = np.clip(angle_delta, -max_angle_delta, max_angle_delta)
     angle_delta_new = self.override_accel_rate_limiter_delta.update(angle_delta, max_angle_rate_delta * DT_CTRL)
-    apply_angle = self.override_accel_rate_limiter.update(apply_angle, angle_delta_new)
+    # final angle rate limit is its own rate limited delta to allow quick deceleration
+    apply_angle = self.override_accel_rate_limiter.update(apply_angle, abs(angle_delta_new))
 
     return apply_angle
 
@@ -390,8 +394,9 @@ class CoopSteeringCarController:
     apply_angle = self.resume_steer_rate_limit_ramp(lat_active, apply_angle, steeringAngleDegPhaseLead)
 
     if angle_coop_enabled:
-      apply_angle = self.steer_desired_accel_limit_for_override(lat_active, apply_angle, CS.out.steeringAngleDeg,
-                                        self.override_angle_accu != 0 and CS.out.vEgo < STEER_DESIRED_LIMITER_ALLOW_SPEED)
+      low_speed_override = CS.out.vEgo < STEER_DESIRED_LIMITER_ALLOW_SPEED and (self.override_angle_accu != 0
+                                          or abs(CS.out.steeringTorque) > STEER_OVERRIDE_MIN_TORQUE)
+      apply_angle = self.steer_desired_accel_limit_for_override(lat_active, apply_angle, low_speed_override)
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
       if not low_speed_pause_enabled:
         # todo maybe keep it always enabled at high speed for consistent behavior
