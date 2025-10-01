@@ -38,7 +38,7 @@ STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TOR
 
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this speed the desired angle limiter is active
-STEER_DESIRED_LIMITER_RATE_DELTA = 10 # deg/s/10ms when override angle ramp is active
+STEER_DESIRED_LIMITER_RATE_DELTA = 1 # deg/s/10ms when override angle ramp is active
 
 # limit model acceleration when engaging or resuming from pause
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 5 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
