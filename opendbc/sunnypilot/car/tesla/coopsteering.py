@@ -10,9 +10,13 @@ from collections import namedtuple
 
 from opendbc.car import structs, rate_limit, DT_CTRL
 from opendbc.car.vehicle_model import VehicleModel
+from opendbc.car.lateral import apply_steer_angle_limits_vm
 from opendbc.sunnypilot.car import get_param
 from opendbc.car.tesla.values import CarControllerParams
 from opendbc.sunnypilot.car.tesla.steer_pause import PauseManager
+
+
+DT_LAT_CTRL = DT_CTRL * CarControllerParams.STEER_STEP
 
 STEERING_DEG_PHASE_LEAD_COEFF = 8.0
 
@@ -45,7 +49,7 @@ STEER_RESUME_RATE_LIMIT_RAMP_RATE = 5 # deg/s/10ms - controls rate of rise of an
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
-                                ["control_type", "lat_pause", "steeringAngleDeg"])
+                                ["steeringAngleDeg", "lat_active", "control_type"])
 
 
 class CoopSteeringCarState:
@@ -94,7 +98,7 @@ def calc_override_angle_delta(torque: float, vEgo: float, VM: VehicleModel, lat_
   override_angle_rate = torque * min(torque_to_angle, STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT)
 
   # prevent windup due to carcontroller angle rate limiter
-  return apply_bounds(override_angle_rate * DT_CTRL, CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
+  return apply_bounds(override_angle_rate * DT_LAT_CTRL, CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
 
 
 def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angle: float, driverTorque: float, vEgo: float) -> float:
@@ -134,13 +138,14 @@ class SteerRateLimiter:
 class CoopSteeringCarController:
   def __init__(self):
     super().__init__()
-    self.coop_steering = CoopSteeringDataSP(False, False, 0)
+    self.coop_steeringAngleDeg = 0
     self.override_angle_accu = 0
     self.pause_manager = PauseManager()
     self.resume_rate_limiter_delta = SteerRateLimiter()
     self.resume_rate_limiter = SteerRateLimiter()
     self.override_accel_rate_limiter_delta = SteerRateLimiter()
     self.override_accel_rate_limiter = SteerRateLimiter()
+
 
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
@@ -222,10 +227,10 @@ class CoopSteeringCarController:
     if override_active:
       max_angle_rate_delta = STEER_DESIRED_LIMITER_RATE_DELTA
     else:
-      max_angle_rate_delta = max_angle_delta / DT_CTRL
+      max_angle_rate_delta = max_angle_delta / DT_LAT_CTRL
     angle_delta = apply_angle - self.override_accel_rate_limiter.apply_angle_last
     angle_delta = np.clip(angle_delta, -max_angle_delta, max_angle_delta)
-    angle_delta_new = self.override_accel_rate_limiter_delta.update(angle_delta, max_angle_rate_delta * DT_CTRL)
+    angle_delta_new = self.override_accel_rate_limiter_delta.update(angle_delta, max_angle_rate_delta * DT_LAT_CTRL)
     # final angle rate limit is its own rate limited delta to allow quick deceleration
     apply_angle = self.override_accel_rate_limiter.update(apply_angle, abs(angle_delta_new))
 
@@ -240,21 +245,17 @@ class CoopSteeringCarController:
       return apply_angle
 
     angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK,
-                                                         STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_CTRL)
+                                                         STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_LAT_CTRL)
     apply_angle_lim = self.resume_rate_limiter.update(apply_angle, angle_rate_delta_lim)
     return apply_angle_lim
 
-  def coop_steering_update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
+  def coop_steering_update(self, apply_angle, lat_active, CC_SP: structs.CarControlSP, CS: structs.CarState, VM: VehicleModel) -> CoopSteeringDataSP:
     # estimate real steering angle by adding rate to the tesla filtered angle
     steeringAngleDegPhaseLead = CS.out.steeringAngleDeg + CS.out.steeringRateDeg / STEERING_DEG_PHASE_LEAD_COEFF
 
     lkas_enabled = get_param(CC_SP.params, "TeslaLkasSteering", False)
     angle_coop_enabled = get_param(CC_SP.params, "TeslaCoopSteering", False)
     low_speed_pause_enabled = get_param(CC_SP.params, "TeslaLowSpeedSteerPause", False)
-
-    # Replicate carcontroller behavior here to perform actions on all disengagements
-    lat_active = CC.latActive and CS.hands_on_level < 3
-    apply_angle = CC.actuators.steeringAngleDeg
 
     # 1 = angle control, 2 = LKAS mode; todo: use CAN parser enums
     control_type = 2 if lkas_enabled else 1
@@ -274,19 +275,21 @@ class CoopSteeringCarController:
       low_speed_override = CS.out.vEgo < STEER_DESIRED_LIMITER_ALLOW_SPEED and (self.override_angle_accu != 0
                                           or abs(CS.out.steeringTorque) > STEER_OVERRIDE_MIN_TORQUE)
       apply_angle = self.steer_desired_accel_limit_for_override(lat_active, apply_angle, low_speed_override)
+      self.debug_angle_desired_limited = apply_angle
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
       if not low_speed_pause_enabled:
         # todo maybe keep it always enabled at high speed for consistent behavior
         apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
 
       if lkas_enabled:  # apply LKAS compensation to angle override
-        apply_angle = lkas_compensation(apply_angle, self.coop_steering.steeringAngleDeg, steeringAngleDegPhaseLead,
+        apply_angle = lkas_compensation(apply_angle, self.coop_steeringAngleDeg, steeringAngleDegPhaseLead,
                                         CS.out.steeringTorque, CS.out.vEgo)
 
-    self.coop_steering = CoopSteeringDataSP(control_type, lat_pause, apply_angle)
-    return self.coop_steering
+    # final rate limit - matching panda safety
+    self.coop_steeringAngleDeg = apply_steer_angle_limits_vm(apply_angle, self.coop_steeringAngleDeg, CS.out.vEgoRaw,
+                                                    CS.out.steeringAngleDeg, lat_active, CarControllerParams, self.VM)
 
-  def update(self, CC: structs.CarControl, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
-    coop_steering = self.coop_steering_update(CC, CC_SP, CS, self.VM)
+    return CoopSteeringDataSP(self.coop_steeringAngleDeg, lat_active, control_type)
 
-    return coop_steering
+  def update(self, apply_angle, lat_active, CC_SP: structs.CarControlSP, CS: structs.CarState) -> CoopSteeringDataSP:
+    return self.coop_steering_update(apply_angle, lat_active, CC_SP, CS, self.VM)
