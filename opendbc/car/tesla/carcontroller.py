@@ -28,21 +28,20 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     self.VM = VehicleModel(get_safety_CP())
 
   def update(self, CC, CC_SP, CS, now_nanos):
-    coop_steer = CoopSteeringCarController.update(self, CC, CC_SP, CS)
     actuators = CC.actuators
     can_sends = []
 
     # Tesla EPS enforces disabling steering on heavy lateral override force.
     # When enabling in a tight curve, we wait until user reduces steering force to start steering.
     # Canceling is done on rising edge and is handled generically with CC.cruiseControl.cancel
-    lat_active = CC.latActive and CS.hands_on_level < 3 and not coop_steer.lat_pause
+    lat_active = CC.latActive and CS.hands_on_level < 3
 
     if self.frame % CarControllerParams.STEER_STEP == 0:
       # Angular rate limit based on speed
-      self.apply_angle_last = apply_steer_angle_limits_vm(coop_steer.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
+      self.apply_angle_last = apply_steer_angle_limits_vm(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
                                                           lat_active, CarControllerParams, self.VM)
 
-      can_sends.append(self.tesla_can.create_steering_control(self.apply_angle_last, lat_active, coop_steer.control_type))
+      can_sends.append(self.tesla_can.create_steering_control(*CoopSteeringCarController.update(self, self.apply_angle_last, lat_active, CC_SP, CS)))
 
     if self.frame % 10 == 0:
       can_sends.append(self.tesla_can.create_steering_allowed())
@@ -64,6 +63,7 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     # TODO: HUD control
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
+    new_actuators.accel = self.coop_steeringAngleDeg # debug
 
     self.frame += 1
     return new_actuators, can_sends
