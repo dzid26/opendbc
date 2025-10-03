@@ -45,7 +45,7 @@ STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this s
 STEER_DESIRED_LIMITER_ACCEL = 100 # deg/s^2 when override angle ramp is active
 
 # limit model acceleration when engaging or resuming from pause
-STEER_RESUME_RATE_LIMIT_RAMP_RATE = 5 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
+STEER_RESUME_RATE_LIMIT_RAMP_RATE = 500 # deg/s^2 - controls rate of rise of angle rate limit, not angle directly
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -289,7 +289,7 @@ class CoopSteeringCarController:
       return apply_angle
 
     angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE,
-                                                         STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_LAT_CTRL)
+                                                         STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_LAT_CTRL**2)
     apply_angle_lim = self.resume_rate_limiter.update(apply_angle, angle_rate_delta_lim)
     return apply_angle_lim
 
