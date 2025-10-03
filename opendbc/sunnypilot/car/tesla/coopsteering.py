@@ -288,7 +288,7 @@ class CoopSteeringCarController:
       self.resume_rate_limiter.reset(steering_angle)
       return apply_angle
 
-    angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK,
+    angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE,
                                                          STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_LAT_CTRL)
     apply_angle_lim = self.resume_rate_limiter.update(apply_angle, angle_rate_delta_lim)
     return apply_angle_lim
