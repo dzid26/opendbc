@@ -42,7 +42,7 @@ STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TOR
 
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this speed the desired angle limiter is active
-STEER_DESIRED_LIMITER_RATE_DELTA = 1 # deg/s/10ms when override angle ramp is active
+STEER_DESIRED_LIMITER_ACCEL = 100 # deg/s^2 when override angle ramp is active
 
 # limit model acceleration when engaging or resuming from pause
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 5 # deg/s/10ms - controls rate of rise of angle rate limit, not angle directly
@@ -123,16 +123,65 @@ def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angl
 class SteerRateLimiter:
   """Handles rate limiting of steering angle changes with a configurable rate."""
   def __init__(self):
-    self.apply_angle_last = 0.0
+    self._last = 0.0
 
-  def reset(self, apply_angle: float) -> None:
+  def reset(self, angle: float) -> None:
     """Reset the rate limiter state with the given angle."""
-    self.apply_angle_last = apply_angle
+    self._last = angle
 
-  def update(self, apply_angle: float, angle_delta_lim: float) -> float:
-    apply_angle_lim = rate_limit(apply_angle, self.apply_angle_last, -angle_delta_lim, angle_delta_lim)
-    self.apply_angle_last = apply_angle_lim
-    return apply_angle_lim
+  def update(self, angle: float, angle_delta_lim: float) -> float:
+    angle_lim = rate_limit(angle, self._last, -angle_delta_lim, angle_delta_lim)
+    self._last = angle_lim
+    return angle_lim
+
+
+class SteerAccelLimiter:
+  """
+  Second-order limiter for steering angle:
+  - Limits angular acceleration (change in allowed angular rate).
+  - Enforces a hard max angular rate.
+  """
+  def __init__(self):
+    self.delta_rl = SteerRateLimiter()
+    self.angle_last = 0.0
+
+  def reset(self, angle: float) -> None:
+    self.delta_rl.reset(0)
+    self.angle_last = angle
+
+  def update(self, angle_target: float, max_rate: float, accel: float, decel: float, dt: float) -> float:
+    if dt <= 0.0:
+      return self.angle_last
+
+    # acceleration limits per update step
+    accel_delta = max(0.0, accel) * (dt * dt)
+    decel_delta = max(0.0, decel) * (dt * dt)
+
+    err = angle_target - self.angle_last
+    err = apply_bounds(err, max(0.0, max_rate) * dt)
+
+    # acceleration (towards target) or deceleration (away from target)
+    if err * self.delta_rl._last < 0:
+      delta = decel_delta
+    else:
+      delta = accel_delta
+
+    # Handle large decel (enabled with inf value)
+    if decel == np.inf and err * self.delta_rl._last < 0:
+      # if output crosses the target or target crosses the output
+      self.delta_rl._last = 0
+      angle_out = self.angle_last
+    else:
+      self.delta_rl._last = self.delta_rl.update(err, delta)
+      if decel == np.inf:
+        # if we are close to target, snap to it before we cross it
+        self.delta_rl._last = apply_bounds(self.delta_rl._last, abs(err))
+      angle_out = self.angle_last + self.delta_rl._last
+
+    # Integrate
+    self.angle_last = angle_out
+
+    return angle_out
 
 
 class CoopSteeringCarController:
@@ -143,9 +192,7 @@ class CoopSteeringCarController:
     self.pause_manager = PauseManager()
     self.resume_rate_limiter_delta = SteerRateLimiter()
     self.resume_rate_limiter = SteerRateLimiter()
-    self.override_accel_rate_limiter_delta = SteerRateLimiter()
-    self.override_accel_rate_limiter = SteerRateLimiter()
-
+    self.override_accel_rate_limiter = SteerAccelLimiter()
 
   def apply_override_angle(self, lat_active: bool, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
@@ -219,22 +266,19 @@ class CoopSteeringCarController:
     Acceleration rate limiter - limits acceleration but allows for quick deceleration (no overshoot)
     """
     if not lat_active:
-      self.override_accel_rate_limiter_delta.reset(0)
       self.override_accel_rate_limiter.reset(apply_angle)
       return apply_angle
 
-    max_angle_delta = CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE
+    # use max angle rate, apply_angle is already limited in CarController
+    max_angle_rate = CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_LAT_CTRL # MAX_ANGLE_RATE is per frame units
     if override_active:
-      max_angle_rate_delta = STEER_DESIRED_LIMITER_RATE_DELTA
+      max_angle_accel = STEER_DESIRED_LIMITER_ACCEL
     else:
-      max_angle_rate_delta = max_angle_delta / DT_LAT_CTRL
-    angle_delta = apply_angle - self.override_accel_rate_limiter.apply_angle_last
-    angle_delta = np.clip(angle_delta, -max_angle_delta, max_angle_delta)
-    angle_delta_new = self.override_accel_rate_limiter_delta.update(angle_delta, max_angle_rate_delta * DT_LAT_CTRL)
-    # final angle rate limit is its own rate limited delta to allow quick deceleration
-    apply_angle = self.override_accel_rate_limiter.update(apply_angle, abs(angle_delta_new))
+      # this will ensure no acceleration limit when override is disabled
+      max_angle_accel = max_angle_rate / DT_LAT_CTRL
 
-    return apply_angle
+    # max_angle_rate / DT_LAT_CTRL ensures max deceleration
+    return self.override_accel_rate_limiter.update(apply_angle, max_angle_rate, max_angle_accel, np.inf, DT_LAT_CTRL)
 
   def resume_steer_rate_limit_ramp(self, lat_active: bool, apply_angle: float, steering_angle: float) -> float:
     """Limits steering wheel acceleration when resuming steering after pause"""
