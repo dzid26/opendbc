@@ -227,10 +227,10 @@ class CoopSteeringCarController:
       driverTorque = np.interp(vEgo, [LKAS_OVERRIDE_OFF_SPEED, LKAS_OVERRIDE_ON_SPEED],
               [driverTorque, apply_bounds(driverTorque, STEER_OVERRIDE_MIN_TORQUE)])
 
-    # torque biasing emulates the steering centering:
-    if self.override_angle_accu > 0:
+    # torque biasing emulates the steering centering when released:
+    if self.override_angle_accu > 0 and abs(vEgo) > 0.1:
       torque_biased = driverTorque - STEER_OVERRIDE_MIN_TORQUE
-    elif self.override_angle_accu < 0:
+    elif self.override_angle_accu < 0 and abs(vEgo) > 0.1:
       torque_biased = driverTorque + STEER_OVERRIDE_MIN_TORQUE
     else:
       torque_biased = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
