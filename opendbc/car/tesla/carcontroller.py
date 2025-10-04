@@ -64,6 +64,7 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
     new_actuators.accel = self.coop_steeringAngleDeg # debug
+    new_actuators.curvature = float(self.override_accel_rate_limiter.angle_last) # debug
 
     self.frame += 1
     return new_actuators, can_sends
