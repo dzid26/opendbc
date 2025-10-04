@@ -237,8 +237,8 @@ class CoopSteeringCarController:
 
     # higher rate when centering
     angle_override_delta = calc_override_angle_delta(torque_biased, vEgo, VM,
-                          STEER_OVERRIDE_MAX_LAT_JERK if torque_biased * self.override_angle_accu > 0
-                          else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
+      STEER_OVERRIDE_MAX_LAT_JERK if (torque_biased * self.override_angle_accu > 0 or vEgo < 0.1)
+      else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
 
     # ramp the angle
     new_override_angle_accu = self.override_angle_accu + angle_override_delta
