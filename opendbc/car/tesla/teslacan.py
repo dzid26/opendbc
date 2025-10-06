@@ -9,11 +9,25 @@ class TeslaCAN:
   def create_steering_control(self, angle, enabled, control_type):
     values = {
       "DAS_steeringAngleRequest": -angle,
-      "DAS_steeringHapticRequest": 0,
+      "DAS_steeringHapticRequest": 1,  # 1s vibration n startup
       "DAS_steeringControlType": control_type if enabled else 0,
     }
 
     return self.packer.make_can_msg("DAS_steeringControl", CANBUS.party, values)
+
+  def create_das_status_forward(self, values_recv: dict[str, int]):
+    values = {
+      **values_recv,
+      "DAS_fusedSpeedLimit": 80,
+      "DAS_visionOnlySpeedLimit": 70,
+      "DAS_sideCollisionAvoid": 1, # left
+      "DAS_laneDepartureWarning": 2, # RIGHT_WARNING
+      "DAS_sideCollisionInhibit": 1, # INHIBIT
+      "DAS_laneDepartureWarning": 0,
+      "DAS_sideCollisionWarning": 0,
+      
+    }
+    return self.packer.make_can_msg("DAS_status", CANBUS.party, values)
 
   def create_longitudinal_command(self, acc_state, accel, counter, v_ego, active):
     from opendbc.car.interfaces import V_CRUISE_MAX

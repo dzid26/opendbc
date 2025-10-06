@@ -46,6 +46,10 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     if self.frame % 10 == 0:
       can_sends.append(self.tesla_can.create_steering_allowed())
 
+    # Forward DAS status with cleared speed limit
+    if self.frame % 50 == 0:
+      can_sends.append(self.tesla_can.create_das_status_forward(CS.das_status_msg))
+
     # Longitudinal control
     if self.CP.openpilotLongitudinalControl:
       if self.frame % 4 == 0:

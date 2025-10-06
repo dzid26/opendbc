@@ -12,6 +12,8 @@
   {.msg = {{0x39d, 0, 5, 25U, .max_counter = 15U}, { 0 }, { 0 }}},                                /* IBST_status (brakes) */                         \
   {.msg = {{0x286, 0, 8, 10U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},   /* DI_state (acc state) */                         \
   {.msg = {{0x311, 0, 7, 10U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},   /* UI_warning (blinkers, buckle switch & doors) */ \
+  // {.msg = {{0x39B, 2, 8, 2U, .max_counter = 15U}, { 0 }, { 0 }}},   /* DAS_status */
+
 
 #define TESLA_VEHICLE_BUS_ADDR_CHECK \
   {.msg = {{0x3DF, 1, 8, 2U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    /* UI_status2 */ \
@@ -48,8 +50,8 @@ static uint8_t tesla_get_counter(const CANPacket_t *msg) {
   } else if ((msg->addr == 0x257U) || (msg->addr == 0x118U) || (msg->addr == 0x39dU) || (msg->addr == 0x286U) || (msg->addr == 0x311U)) {
     // Signal: DI_speedCounter, DI_systemStatusCounter, IBST_statusCounter, DI_locStatusCounter, UI_warningCounter
     cnt = msg->data[1] & 0x0FU;
-  } else if (msg->addr == 0x155U) {
-    // Signal: ESP_wheelRotationCounter
+  } else if ((msg->addr == 0x155U)) { // || (msg->addr == 0x39B)) {
+    // Signal: ESP_wheelRotationCounter, DAS_statusCounter
     cnt = msg->data[6] >> 4;
   } else if (msg->addr == 0x370U) {
     // Signal: EPAS3S_sysStatusCounter
@@ -61,8 +63,8 @@ static uint8_t tesla_get_counter(const CANPacket_t *msg) {
 
 static int _tesla_get_checksum_byte(const int addr) {
   int checksum_byte = -1;
-  if ((addr == 0x370) || (addr == 0x2b9) || (addr == 0x155)) {
-    // Signal: EPAS3S_sysStatusChecksum, DAS_controlChecksum, ESP_wheelRotationChecksum
+  if ((addr == 0x370) || (addr == 0x2b9) || (addr == 0x155)) { // || (addr == 0x39B)) {
+    // Signal: EPAS3S_sysStatusChecksum, DAS_controlChecksum, ESP_wheelRotationChecksum, DAS_statusChecksum
     checksum_byte = 7;
   } else if (addr == 0x488) {
     // Signal: DAS_steeringControlChecksum
@@ -329,8 +331,8 @@ static bool tesla_fwd_hook(int bus_num, int addr) {
         block_msg = true;
       }
 
-      // DAS_steeringControl
-      if ((addr == 0x488) && !tesla_stock_steering_control) {
+      // DAS_steeringControl, DAS_status
+      if (((addr == 0x488) ) && !tesla_stock_steering_control) { //|| (addr == 0x39B)
         block_msg = true;
       }
 
@@ -350,12 +352,14 @@ static safety_config tesla_init(uint16_t param) {
     {0x488, 0, 4, .check_relay = true, .disable_static_blocking = true},   // DAS_steeringControl
     {0x2b9, 0, 8, .check_relay = false},                                   // DAS_control (for cancel)
     {0x27D, 0, 3, .check_relay = true, .disable_static_blocking = true},   // APS_eacMonitor
+    {0x39B, 0, 8, .check_relay = true},   // DAS_status
   };
 
   static const CanMsg TESLA_M3_Y_LONG_TX_MSGS[] = {
     {0x488, 0, 4, .check_relay = true, .disable_static_blocking = true},  // DAS_steeringControl
     {0x2b9, 0, 8, .check_relay = true, .disable_static_blocking = true},  // DAS_control
     {0x27D, 0, 3, .check_relay = true, .disable_static_blocking = true},  // APS_eacMonitor
+    {0x39B, 0, 8, .check_relay = true},  // DAS_status
   };
 
   UNUSED(param);

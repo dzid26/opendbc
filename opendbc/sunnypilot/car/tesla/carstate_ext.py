@@ -24,6 +24,8 @@ class CarStateExt(CoopSteeringCarState):
 
     self.infotainment_3_finger_press = 0
 
+    self.das_status_msg = None
+
   def update(self, ret: structs.CarState, ret_sp: structs.CarStateSP, can_parsers: dict[StrEnum, CANParser]) -> None:
     # ret.steeringDisengage = self.controls_disengage_cond(ret)
 
@@ -39,8 +41,10 @@ class CarStateExt(CoopSteeringCarState):
     cp_party = can_parsers[Bus.party]
     cp_ap_party = can_parsers[Bus.ap_party]
 
+    self.das_status_msg = cp_ap_party.vl["DAS_status"]
+
     speed_units = self.can_define.dv["DI_state"]["DI_speedUnits"].get(int(cp_party.vl["DI_state"]["DI_speedUnits"]), None)
-    speed_limit = cp_ap_party.vl["DAS_status"]["DAS_fusedSpeedLimit"]
+    speed_limit = self.das_status_msg["DAS_fusedSpeedLimit"]
     if self.can_define.dv["DAS_status"]["DAS_fusedSpeedLimit"].get(int(speed_limit), None) in ["NONE", "UNKNOWN_SNA"]:
       ret_sp.speedLimit = 0
     else:
