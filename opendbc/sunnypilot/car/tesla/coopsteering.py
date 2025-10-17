@@ -300,7 +300,7 @@ class CoopSteeringCarController:
       # reset and bypass when paused
       self.resume_rate_limiter_delta.reset(0)
       self.resume_rate_limiter.reset(steering_angle)
-      return apply_angle
+      return steering_angle
 
     angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE,
                                                          STEER_RESUME_RATE_LIMIT_RAMP_RATE * DT_LAT_CTRL**2)
