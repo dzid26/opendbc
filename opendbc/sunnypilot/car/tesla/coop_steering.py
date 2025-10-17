@@ -56,6 +56,12 @@ STEER_RESUME_RATE_LIMIT_RAMP_RATE = 500 # deg/s^2 - controls rate of rise of ang
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
                                 ["steeringAngleDeg", "lat_active", "control_type"])
 
+
+class CoopSteeringCarState:
+  def __init__(self):
+    pass
+
+
 def get_steer_from_lat_accel(lat_accel, v_ego: float, VM: VehicleModel):
   """Calculate the maximum steering angle based on lateral acceleration."""
   curvature = lat_accel / (max(1, v_ego) ** 2)  # 1/m
