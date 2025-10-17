@@ -28,7 +28,6 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     self.VM = VehicleModel(get_safety_CP())
 
   def update(self, CC, CC_SP, CS, now_nanos):
-    CoopSteeringCarController.update(self, self.CP_SP)
     actuators = CC.actuators
     can_sends = []
 
@@ -42,7 +41,7 @@ class CarController(CarControllerBase, CoopSteeringCarController):
       self.apply_angle_last = apply_steer_angle_limits_vm(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
                                                           lat_active, CarControllerParams, self.VM)
 
-      can_sends.append(self.tesla_can.create_steering_control(self.apply_angle_last, lat_active, self.coop_steering.control_type))
+      can_sends.append(self.tesla_can.create_steering_control(*CoopSteeringCarController.update(self, self.apply_angle_last, lat_active, self.CP_SP, CS)))
 
     if self.frame % 10 == 0:
       can_sends.append(self.tesla_can.create_steering_allowed())
@@ -64,6 +63,9 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     # TODO: HUD control
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
+    new_actuators.accel = self.coop_steeringAngleDeg # debug
+    new_actuators.curvature = float(self.debug_angle_desired_limited) # debug
+    new_actuators.torque = float(self.override_angle_accu) # debug
 
     self.frame += 1
     return new_actuators, can_sends
