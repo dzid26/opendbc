@@ -11,6 +11,7 @@ class TeslaFlagsSP(IntFlag):
   HAS_VEHICLE_BUS = 1  # 3-finger infotainment press signal is present on the VEHICLE bus with the deprecated Tesla harness installed
   COOP_STEERING = 2 # virtual torque blending
   LKAS_STEERING = 2**2 # use LKAS steering interface to provide oem torque blending
+  PAUSE_STEERING = 2**3 # pause steer on override at low speed
 
 
 class TeslaSafetyFlagsSP:
