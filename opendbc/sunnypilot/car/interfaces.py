@@ -101,6 +101,9 @@ def _initialize_coop_steering(CP: structs.CarParams, CP_SP: structs.CarParamsSP,
     coop_steering = int(params_dict.get("TeslaCoopSteering", 0)) == 1
     if coop_steering:
       CP_SP.flags |= TeslaFlagsSP.COOP_STEERING.value
+    lkas_steering = int(params_dict.get("TeslaLkasSteering", 0)) == 1
+    if lkas_steering:
+      CP_SP.flags |= TeslaFlagsSP.LKAS_STEERING.value
 
 def _initialize_radar_tracks(CP: structs.CarParams, CP_SP: structs.CarParamsSP, can_recv: CanRecvCallable = None, can_send: CanSendCallable = None) -> None:
   if CP.brand == 'hyundai':
