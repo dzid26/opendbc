@@ -14,6 +14,7 @@ from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.lateral import apply_steer_angle_limits_vm
 from opendbc.car.tesla.values import CarControllerParams
 from opendbc.sunnypilot.car.tesla.values import TeslaFlagsSP
+from opendbc.sunnypilot.car.tesla.steer_pause import PauseManager
 
 
 DT_LAT_CTRL = DT_CTRL * CarControllerParams.STEER_STEP
@@ -48,7 +49,7 @@ STEER_DESIRED_LIMITER_ALLOW_SPEED = LKAS_OVERRIDE_OFF_SPEED # m/s - below this s
 STEER_DESIRED_LIMITER_ACCEL = 100 # deg/s^2 when override angle ramp is active
 STEER_DESIRED_LIMITER_OVERRIDE_ACTIVE_COUNTER = 0.7 # second
 
-# limit model acceleration when engaging
+# limit model acceleration when engaging or resuming from pause
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 500 # deg/s^2 - controls rate of rise of angle rate limit, not angle directly
 
 
@@ -187,6 +188,7 @@ class CoopSteeringCarController:
     self.coop_steeringAngleDeg = 0
     self.override_angle_accu = 0
     self.override_active_counter = 0  # Counter for how many cycles torque is below threshold
+    self.pause_manager = PauseManager()
     self.resume_rate_limiter_delta = SteerRateLimiter()
     self.resume_rate_limiter = SteerRateLimiter()
     self.override_accel_rate_limiter = SteerAccelLimiter()
@@ -280,9 +282,9 @@ class CoopSteeringCarController:
     return self.override_accel_rate_limiter.update(apply_angle, max_angle_rate, max_angle_accel, np.inf, DT_LAT_CTRL)
 
   def resume_steer_desired_rate_limit(self, lat_active: bool, apply_angle: float, steering_angle: float) -> float:
-    """Limits steering wheel acceleration when resuming steering"""
+    """Limits steering wheel acceleration when resuming steering after pause"""
     if not lat_active:
-      # reset and bypass
+      # reset and bypass when paused
       self.resume_rate_limiter_delta.reset(0)
       self.resume_rate_limiter.reset(steering_angle)
       return steering_angle
@@ -298,9 +300,18 @@ class CoopSteeringCarController:
 
     lkas_enabled = CP_SP.flags & TeslaFlagsSP.LKAS_STEERING.value
     angle_coop_enabled = CP_SP.flags & TeslaFlagsSP.COOP_STEERING.value
+    low_speed_pause_enabled = CP_SP.flags & TeslaFlagsSP.PAUSE_STEERING.value
 
     # 1 = angle control, 2 = LKAS mode; todo: use CAN parser enums
     control_type = 2 if lkas_enabled else 1
+
+    if low_speed_pause_enabled and lat_active:
+      lat_pause = self.pause_manager.update_pause_state(apply_angle, CS, VM)
+    else:
+      self.pause_manager.reset_pause_state()
+      lat_pause = False
+
+    lat_active = lat_active and not lat_pause
 
     # avoid sudden rotation on engagement
     apply_angle = self.resume_steer_desired_rate_limit(lat_active, apply_angle, steeringAngleDegPhaseLead)
@@ -309,7 +320,9 @@ class CoopSteeringCarController:
       apply_angle = self.overriding_steer_desired_accel_limit(lat_active, apply_angle, CS.out.vEgo, CS.out.steeringTorque)
       self.debug_angle_desired_limited = apply_angle #! debug
       apply_angle = self.apply_override_angle(lat_active, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
-      apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
+      if not low_speed_pause_enabled:
+        # todo maybe keep it always enabled at high speed for consistent behavior
+        apply_angle = self.apply_override_angle_ramp(lat_active, lkas_enabled, apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
 
       if lkas_enabled:  # apply LKAS compensation to angle override
         apply_angle = lkas_compensation(apply_angle, self.coop_steeringAngleDeg, steeringAngleDegPhaseLead,
