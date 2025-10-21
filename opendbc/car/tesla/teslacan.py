@@ -18,8 +18,9 @@ class TeslaCAN:
   def create_das_status_forward(self, values_recv: dict[str, int]):
     values = {
       **values_recv,
-      "DAS_fusedSpeedLimit": 80,
+      "DAS_fusedSpeedLimit": 40,
       "DAS_visionOnlySpeedLimit": 70,
+      "DAS_suppressSpeedWarning": 1,
       "DAS_sideCollisionAvoid": 1, # left
       "DAS_laneDepartureWarning": 2, # RIGHT_WARNING
       "DAS_sideCollisionInhibit": 1, # INHIBIT
