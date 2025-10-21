@@ -19,7 +19,7 @@ class TeslaCAN:
     values = {
       **values_recv,
       "DAS_fusedSpeedLimit": 40,
-      "DAS_visionOnlySpeedLimit": 70,
+      # "DAS_visionOnlySpeedLimit": 70,
       "DAS_suppressSpeedWarning": 1,
       "DAS_sideCollisionAvoid": 1, # left
       "DAS_laneDepartureWarning": 2, # RIGHT_WARNING
