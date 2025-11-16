@@ -258,14 +258,7 @@ class CoopSteeringCarController:
     self.override_angle_accu = apply_bounds(self.override_angle_accu,
                                             get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM))
 
-    apply_angle = apply_angle + self.override_angle_accu
-
-    # predict and prevent windup due to Carcontroller angle saturation
-    absolute_max_angle = min(CoopSteeringCarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX, # 360deg
-                          get_steer_from_lat_accel(CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_LATERAL_ACCEL, vEgo, VM))
-    angle_saturation_delta = apply_angle - apply_bounds(apply_angle, absolute_max_angle)
-    self.override_angle_accu -= angle_saturation_delta
-    return apply_angle
+    return self.override_angle_accu + apply_angle
 
   def overriding_steer_desired_accel_limit(self, lat_active: bool, apply_angle: float, vEgo: float, steeringTorque: float) -> float:
     """
