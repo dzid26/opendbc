@@ -243,13 +243,13 @@ class CoopSteeringCarController:
 
     # higher rate when centering
     angle_override_delta = calc_override_angle_delta(torque_biased, vEgo, VM,
-                          STEER_OVERRIDE_MAX_LAT_JERK if torque_biased * self.override_angle_accu > 0
+                          STEER_OVERRIDE_MAX_LAT_JERK if (torque_biased * self.override_angle_accu) > 0
                           else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
 
     # ramp the angle
     new_override_angle_accu = self.override_angle_accu + angle_override_delta
-    # clamp to 0 if sign changes
-    if new_override_angle_accu * self.override_angle_accu < 0 and abs(driverTorque) < STEER_OVERRIDE_MIN_TORQUE:
+    # snap to 0 if sign changes
+    if (new_override_angle_accu * self.override_angle_accu) < 0 and abs(driverTorque) < STEER_OVERRIDE_MIN_TORQUE:
       self.override_angle_accu = 0
     else:
       self.override_angle_accu = new_override_angle_accu
@@ -276,7 +276,7 @@ class CoopSteeringCarController:
 
     max_angle_rate = CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_LAT_CTRL # MAX_ANGLE_RATE is per frame units so convert to real rate
     # this ensures no acceleration limit when override is disabled:
-    max_angle_accel = max_angle_rate / DT_LAT_CTRL
+    max_angle_accel = max_angle_rate / DT_LAT_CTRL # ensures max deceleration
     if vEgo < STEER_DESIRED_LIMITER_ALLOW_SPEED:
       # Interpolate between STEER_DESIRED_LIMITER_ACCEL and max_angle_accel based on counter progress
       max_angle_accel = np.interp(
