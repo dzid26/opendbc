@@ -106,9 +106,9 @@ def calc_override_angle_delta(torque: float, vEgo: float, VM: VehicleModel, lat_
   return apply_bounds(override_angle_rate * DT_LAT_CTRL, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
 
 
-def lkas_compensation(apply_angle: float, apply_angle_last: float, steering_angle: float, driverTorque: float, vEgo: float) -> float:
+def lkas_compensation(apply_angle: float, apply_angle_final_last: float, steering_angle: float, driverTorque: float, vEgo: float) -> float:
   # lkas contribution is done by the car and is a difference between our command and measured angle
-  lkas_angle = steering_angle - apply_angle_last
+  lkas_angle = steering_angle - apply_angle_final_last
   # steering_angle can be lagging behind the command so ignore that:
   if driverTorque * lkas_angle < 0:
     lkas_angle = 0
