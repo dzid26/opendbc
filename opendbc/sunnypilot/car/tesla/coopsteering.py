@@ -148,21 +148,21 @@ class SteerAccelLimiter:
   """
   def __init__(self):
     self.delta_rl = SteerRateLimiter()
-    self.angle_last = 0.0
+    self.angle_cmd = 0.0
 
   def reset(self, angle: float) -> None:
     self.delta_rl.reset(0)
-    self.angle_last = angle
+    self.angle_cmd = angle
 
   def update(self, angle_target: float, max_rate: float, accel: float, decel: float, dt: float) -> float:
     if dt <= 0.0:
-      return self.angle_last
+      return self.angle_cmd
 
     # acceleration limits per update step
     accel_delta = max(0.0, accel) * (dt * dt)
     decel_delta = max(0.0, decel) * (dt * dt)
 
-    err = angle_target - self.angle_last
+    err = angle_target - self.angle_cmd
     err = apply_bounds(err, max(0.0, max_rate) * dt)
 
     # acceleration (towards target) or deceleration (away from target)
@@ -175,16 +175,16 @@ class SteerAccelLimiter:
     if decel == np.inf and err * self.delta_rl._last < 0:
       # if output crosses the target or target crosses the output
       self.delta_rl._last = 0
-      angle_out = self.angle_last
+      angle_out = self.angle_cmd
     else:
       self.delta_rl._last = self.delta_rl.update(err, delta)
       if decel == np.inf:
         # if we are close to target, snap to it before we cross it
         self.delta_rl._last = apply_bounds(self.delta_rl._last, abs(err))
-      angle_out = self.angle_last + self.delta_rl._last
+      angle_out = self.angle_cmd + self.delta_rl._last
 
     # Integrate
-    self.angle_last = angle_out
+    self.angle_cmd = angle_out
 
     return angle_out
 
