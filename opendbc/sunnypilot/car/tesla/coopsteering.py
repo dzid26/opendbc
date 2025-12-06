@@ -308,8 +308,8 @@ class CoopSteeringCarController:
     angle_coop_enabled = CP_SP.flags & TeslaFlagsSP.COOP_STEERING.value
     low_speed_pause_enabled = CP_SP.flags & TeslaFlagsSP.PAUSE_STEERING.value
 
-    # 1 = angle control, 2 = LKAS mode; todo: use CAN parser enums
-    control_type = 2 if lkas_enabled else 1
+    # 1 = angle control, 2 = LKAS mode; 3 = EMERGENCY_LANE_KEEP
+    control_type = 3 if lkas_enabled else 1
 
     if low_speed_pause_enabled and lat_active:
       lat_pause = self.pause_manager.update_pause_state(apply_angle, CS, VM)
