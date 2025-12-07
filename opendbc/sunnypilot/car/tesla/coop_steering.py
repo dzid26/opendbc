@@ -39,7 +39,7 @@ STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 100 # deg/s/Nm - should be less than CarCon
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = 6 # m/s - below this speed the desired angle limiter is active
 STEER_DESIRED_LIMITER_ACCEL = 100 # deg/s^2 when override angle ramp is active
-STEER_DESIRED_LIMITER_OVERRIDE_ACTIVE_COUNTER = 0.7 # second
+STEER_DESIRED_LIMITER_OVERRIDE_ACTIVE_COUNTER = 3.0 # second
 
 # limit model acceleration when engaging
 STEER_RESUME_RATE_LIMIT_RAMP_RATE = 500 # deg/s^2 - controls rate of rise of angle rate limit, not angle directly
@@ -114,53 +114,80 @@ class SteerRateLimiter:
     return angle_lim
 
 
-class SteerAccelLimiter:
-  """
-  Second-order limiter for steering angle:
-  - Limits angular acceleration (change in allowed angular rate).
-  - Enforces a hard max angular rate.
-  """
-  def __init__(self):
-    self.delta_rl = SteerRateLimiter()
-    self.angle_cmd = 0.0
+class SteerJerkLimiter:
+  angle_cmd: float = 0.0
+  vel_cmd: float = 0.0
+  acc_cmd: float = 0.0
 
-  def reset(self, angle: float) -> None:
-    self.delta_rl.reset(0)
+  def reset(self, angle: float = 0.0) -> None:
     self.angle_cmd = angle
+    self.vel_cmd = 0.0
+    self.acc_cmd = 0.0
 
-  def update(self, angle_target: float, max_rate: float, accel: float, decel: float, dt: float) -> float:
-    if dt <= 0.0:
+  def update(
+      self,
+      target_angle: float,
+      dt: float,
+      v_max: float,
+      a_max: float,
+      j_max: float,
+      eps: float = 1e-8,
+  ) -> float:
+    """
+    Advance the command by dt toward target_angle subject to limits.
+
+    Args:
+      target_angle: desired angle (same units as angle_cmd)
+      dt: timestep (s)
+      v_max: max velocity magnitude
+      a_max: max acceleration magnitude
+      j_max: max jerk magnitude (rate of change of acceleration)
+      eps: small tolerance to treat as zero
+    Returns:
+      The updated angle command.
+    """
+    err = target_angle - self.angle_cmd
+
+    if abs(err) < eps and abs(self.vel_cmd) < eps:
+      self.angle_cmd = target_angle
+      self.vel_cmd = 0.0
+      self.acc_cmd = 0.0
       return self.angle_cmd
 
-    # acceleration limits per update step
-    accel_delta = max(0.0, accel) * (dt * dt)
-    decel_delta = max(0.0, decel) * (dt * dt)
+    # braking distance (always >= 0)
+    bd = (self.vel_cmd * self.vel_cmd) / (2.0 * max(a_max, eps))
 
-    err = angle_target - self.angle_cmd
-    err = apply_bounds(err, max(0.0, max_rate) * dt)
-
-    # acceleration (towards target) or deceleration (away from target)
-    if err * self.delta_rl._last < 0:
-      delta = decel_delta
+    # pick desired acceleration sign
+    if abs(err) <= bd + 1e-12:
+      # brake
+      if abs(self.vel_cmd) > 1e-12:
+        desired_acc = -a_max if self.vel_cmd > 0 else a_max
+      else:
+        desired_acc = 0.0
     else:
-      delta = accel_delta
+      # accelerate toward target
+      desired_acc = a_max if err > 0 else -a_max
 
-    # Handle large decel (enabled with inf value)
-    if decel == np.inf and err * self.delta_rl._last < 0:
-      # if output crosses the target or target crosses the output
-      self.delta_rl._last = 0
-      angle_out = self.angle_cmd
-    else:
-      self.delta_rl._last = self.delta_rl.update(err, delta)
-      if decel == np.inf:
-        # if we are close to target, snap to it before we cross it
-        self.delta_rl._last = apply_bounds(self.delta_rl._last, abs(err))
-      angle_out = self.angle_cmd + self.delta_rl._last
+    # jerk limit
+    max_acc_delta = j_max * dt
+    desired_acc = np.clip(desired_acc, self.acc_cmd - max_acc_delta, self.acc_cmd + max_acc_delta)
 
-    # Integrate
-    self.angle_cmd = angle_out
+    # integrate
+    self.acc_cmd = desired_acc
+    self.vel_cmd += self.acc_cmd * dt
+    self.vel_cmd = np.clip(self.vel_cmd, -v_max, v_max)
+    self.angle_cmd += self.vel_cmd * dt
 
-    return angle_out
+    # prevent crossing/overshoot
+    new_err = target_angle - self.angle_cmd
+    if not np.isclose(err, 0.0, atol=0.0):
+      crossed = (err > 0 and new_err <= 0) or (err < 0 and new_err >= 0)
+      if crossed:
+        self.angle_cmd = target_angle
+        self.vel_cmd = 0.0
+        self.acc_cmd = 0.0
+
+    return self.angle_cmd
 
 
 class CoopSteeringCarController:
@@ -171,7 +198,7 @@ class CoopSteeringCarController:
     self.override_active_counter = 0  # Counter for how many cycles torque is below threshold
     self.resume_rate_limiter_delta = SteerRateLimiter()
     self.resume_rate_limiter = SteerRateLimiter()
-    self.override_accel_rate_limiter = SteerAccelLimiter()
+    self.override_accel_rate_limiter = SteerJerkLimiter()
     self.debug_angle_desired_limited = 0
 
   def apply_override_angle_direct(self, lat_active: bool, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
@@ -281,8 +308,7 @@ class CoopSteeringCarController:
         [0, STEER_DESIRED_LIMITER_OVERRIDE_ACTIVE_COUNTER],
         [STEER_DESIRED_LIMITER_ACCEL, max_angle_accel]
       )
-    # max_angle_rate / DT_LAT_CTRL ensures max deceleration
-    return self.override_accel_rate_limiter.update(apply_angle, max_angle_rate, max_angle_accel, np.inf, DT_LAT_CTRL)
+    return self.override_accel_rate_limiter.update(apply_angle, DT_LAT_CTRL, max_angle_rate, max_angle_accel, 100_000.0) #, snap = False)
 
   def resume_steer_desired_rate_limit(self, lat_active: bool, apply_angle: float, steering_angle: float) -> float:
     """Limits steering wheel acceleration when resuming steering"""
