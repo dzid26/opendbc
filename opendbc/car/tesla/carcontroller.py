@@ -6,7 +6,7 @@ from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.tesla.teslacan import TeslaCAN
 from opendbc.car.tesla.values import CarControllerParams
 from opendbc.car.vehicle_model import VehicleModel
-from opendbc.sunnypilot.car.tesla.coopsteering import CoopSteeringCarController
+from opendbc.sunnypilot.car.tesla.coop_steering import CoopSteeringCarController
 
 
 def get_safety_CP():
