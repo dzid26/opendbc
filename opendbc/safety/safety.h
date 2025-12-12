@@ -345,8 +345,8 @@ static void relay_malfunction_set(void) {
 static void generic_rx_checks(void) {
   gas_pressed_prev = gas_pressed;
 
-  // exit controls on rising edge of brake press
-  if (brake_pressed && (!brake_pressed_prev || vehicle_moving)) {
+  // exit controls on falling edge of brake press
+  if (!brake_pressed && brake_pressed_prev) {
     controls_allowed = false;
   }
   brake_pressed_prev = brake_pressed;
