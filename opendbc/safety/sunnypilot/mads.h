@@ -99,7 +99,7 @@ inline void m_update_control_state(void) {
     allowed = false;  // No matter what, no further control processing on this cycle
   }
 
-  if (m_mads_state.disengage_lateral_on_brake && (m_mads_state.braking.transition == MADS_EDGE_RISING)) {
+  if (m_mads_state.disengage_lateral_on_brake && (m_mads_state.braking.transition == MADS_EDGE_FALLING)) {
     mads_exit_controls(MADS_DISENGAGE_REASON_BRAKE);
     allowed = false;
   }
