@@ -49,6 +49,8 @@ class CarStateExt(CoopSteeringCarState):
       elif speed_units == "MPH":
         ret_sp.speedLimit = speed_limit * CV.MPH_TO_MS
 
+    ret.genericToggle = cp_party.vl["UI_warning"]["scrollWheelPressed"] != 0
+
   @staticmethod
   def get_parser(CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> dict[StrEnum, CANParser]:
     messages = {}
