@@ -22,15 +22,19 @@ class CarStateExt:
 
     self.infotainment_3_finger_press = 0
 
+    self.gas_combo_prev = False
+    self.brake_combo_prev = False
+
   def update(self, ret: structs.CarState, ret_sp: structs.CarStateSP, can_parsers: dict[StrEnum, CANParser]) -> None:
+    button_events = []
     if self.CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS:
       cp_adas = can_parsers[Bus.adas]
 
       prev_infotainment_3_finger_press = self.infotainment_3_finger_press
       self.infotainment_3_finger_press = int(cp_adas.vl["UI_status2"]["UI_activeTouchPoints"])
 
-      ret.buttonEvents = [*create_button_events(self.infotainment_3_finger_press, prev_infotainment_3_finger_press,
-                                                {3: ButtonType.lkas})]
+      button_events += create_button_events(self.infotainment_3_finger_press, prev_infotainment_3_finger_press,
+                                                {3: ButtonType.lkas})
 
     cp_party = can_parsers[Bus.party]
     cp_ap_party = can_parsers[Bus.ap_party]
@@ -46,6 +50,17 @@ class CarStateExt:
         ret_sp.speedLimit = speed_limit * CV.MPH_TO_MS
 
     ret.genericToggle = cp_party.vl["UI_warning"]["scrollWheelPressed"] != 0
+
+    # Add gas + scroll press combo as a button event for gap adjustment
+    gas_combo = ret.gasPressed and ret.genericToggle and ret.cruiseState.enabled
+    button_events += create_button_events(int(gas_combo), int(self.gas_combo_prev), {1: ButtonType.gapAdjustCruise})
+
+    # Add brake + scroll press combo as a button event for LKAS
+    brake_combo = ret.brakePressed and ret.genericToggle
+    button_events += create_button_events(int(brake_combo), int(self.brake_combo_prev), {1: ButtonType.lkas})
+    ret.buttonEvents = button_events
+    self.gas_combo_prev = gas_combo
+    self.brake_combo_prev = brake_combo
 
   @staticmethod
   def get_parser(CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> dict[StrEnum, CANParser]:
