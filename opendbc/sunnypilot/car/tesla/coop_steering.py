@@ -283,7 +283,8 @@ class CoopSteeringCarController:
 
     # steering should rotate until reaches angle set by the desired max lat accel
     self.override_angle_accu = apply_bounds(self.override_angle_accu,
-                                            get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM))
+                                            min(get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM),
+                                                CoopSteeringCarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX))
 
     return self.override_angle_accu + apply_angle
 
