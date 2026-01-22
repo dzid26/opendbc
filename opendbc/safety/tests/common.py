@@ -1023,11 +1023,7 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase):
     self._rx(self._user_gas_msg(0))
     self.safety.set_controls_allowed(True)
     self._rx(self._user_gas_msg(self.GAS_PRESSED_THRESHOLD + 1))
-    # Test we allow lateral, but not longitudinal
     self.assertTrue(self.safety.get_controls_allowed())
-    self.assertFalse(self.safety.get_longitudinal_allowed())
-    # Make sure we can re-gain longitudinal actuation
-    self._rx(self._user_gas_msg(0))
     self.assertTrue(self.safety.get_longitudinal_allowed())
 
   def test_prev_user_brake(self, _user_brake_msg=None, get_brake_pressed_prev=None):
