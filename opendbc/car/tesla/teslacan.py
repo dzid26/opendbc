@@ -30,14 +30,14 @@ class TeslaCAN:
 
   def create_longitudinal_command(self, acc_state, accel, counter, v_ego, active):
 
-    set_speed = max((v_ego + 2 * accel) * CV.MS_TO_KPH, 0)
+    set_speed = max((v_ego + accel) * CV.MS_TO_KPH, 0) # add accel offset
 
     values = {
       "DAS_setSpeed": set_speed,
       "DAS_accState": acc_state,
       "DAS_aebEvent": 0,
       "DAS_jerkMin": CarControllerParams.JERK_LIMIT_MIN,
-      "DAS_jerkMax": CarControllerParams.JERK_LIMIT_MAX,
+      "DAS_jerkMax": CarControllerParams.JERK_LIMIT_MAX if active else 0.0,
       "DAS_accelMin": accel,
       "DAS_accelMax": max(accel, 0),
       "DAS_controlCounter": counter,
