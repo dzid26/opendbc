@@ -1,3 +1,4 @@
+from opendbc.car import DT_CTRL
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.tesla.values import CANBUS, CarControllerParams, TeslaFlags
 
@@ -14,6 +15,7 @@ class TeslaCAN:
   def __init__(self, CP, packer):
     self.CP = CP
     self.packer = packer
+    self.jerk = 0.0
 
   def create_steering_control(self, angle, enabled):
     # On FSD 14+, ANGLE_CONTROL behavior changed to allow user winddown while actuating.
@@ -28,20 +30,22 @@ class TeslaCAN:
 
     return self.packer.make_can_msg("DAS_steeringControl", CANBUS.party, values)
 
-  def create_longitudinal_command(self, acc_state, accel, counter, v_ego, active):
+  def create_longitudinal_command(self, acc_state, accel, counter, v_ego, active, cruise_override):
     from opendbc.car.interfaces import V_CRUISE_MAX
 
     set_speed = max(v_ego * CV.MS_TO_KPH, 0)
     if active:
-      # TODO: this causes jerking after gas override when above set speed
       set_speed = 0 if accel < 0 else V_CRUISE_MAX
+
+    # ramping max jerk fixes jerkiness after gas override when above set speed
+    self.jerk = 0 if cruise_override else (self.jerk + CarControllerParams.JERK_RATE_UP * DT_CTRL * 4)
 
     values = {
       "DAS_setSpeed": set_speed,
       "DAS_accState": acc_state,
       "DAS_aebEvent": 0,
       "DAS_jerkMin": CarControllerParams.JERK_LIMIT_MIN,
-      "DAS_jerkMax": CarControllerParams.JERK_LIMIT_MAX,
+      "DAS_jerkMax": min(self.jerk, CarControllerParams.JERK_LIMIT_MAX), # ramping max jerk is enough for some reason
       "DAS_accelMin": accel,
       "DAS_accelMax": max(accel, 0),
       "DAS_controlCounter": counter,
