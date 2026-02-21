@@ -9,7 +9,8 @@ from enum import IntFlag
 
 class TeslaFlagsSP(IntFlag):
   HAS_VEHICLE_BUS = 1  # 3-finger infotainment press signal is present on the VEHICLE bus with the deprecated Tesla harness installed
-  COOP_STEERING = 2  # Coop steering
+  COOP_STEERING = 2 # virtual torque blending
+  LKAS_STEERING = 2**2 # use LKAS steering interface to provide oem torque blending
 
 
 class TeslaSafetyFlagsSP:
