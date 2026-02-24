@@ -16,10 +16,10 @@ def get_safety_CP():
   return CarInterface.get_non_essential_params("TESLA_MODEL_Y")
 
 
-class CarController(CarControllerBase, CoopSteeringCarController):
+class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
-    CoopSteeringCarController.__init__(self)
+    self.coop_steer = CoopSteeringCarController()
     self.apply_angle_last = 0
     self.packer = CANPacker(dbc_names[Bus.party])
     self.tesla_can = TeslaCAN(CP, self.packer)
@@ -28,7 +28,6 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     self.VM = VehicleModel(get_safety_CP())
 
   def update(self, CC, CC_SP, CS, now_nanos):
-    CoopSteeringCarController.update(self, self.CP_SP)
     actuators = CC.actuators
     can_sends = []
 
@@ -37,12 +36,12 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     # Canceling is done on rising edge and is handled generically with CC.cruiseControl.cancel
     lat_active = CC.latActive and CS.hands_on_level < 3
 
-    if self.frame % 2 == 0:
+    if self.frame % CarControllerParams.STEER_STEP == 0:
       # Angular rate limit based on speed
       self.apply_angle_last = apply_steer_angle_limits_vm(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
                                                           lat_active, CarControllerParams, self.VM)
 
-      can_sends.append(self.tesla_can.create_steering_control(self.apply_angle_last, lat_active, self.coop_steering.control_type))
+      can_sends.append(self.tesla_can.create_steering_control(*self.coop_steer.update(self.apply_angle_last, lat_active, self.CP_SP, CS, self.VM)))
 
     if self.frame % 10 == 0:
       can_sends.append(self.tesla_can.create_steering_allowed())
@@ -64,6 +63,9 @@ class CarController(CarControllerBase, CoopSteeringCarController):
     # TODO: HUD control
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
+    new_actuators.accel = self.coop_steer.coop_apply_angle_last_sat # debug
+    new_actuators.curvature = float(self.coop_steer.debug_angle_desired_limited) # debug
+    new_actuators.torque = float(self.coop_steer.override_angle_accu) # debug
 
     self.frame += 1
     return new_actuators, can_sends

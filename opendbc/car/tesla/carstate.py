@@ -19,8 +19,8 @@ class CarState(CarStateBase, CarStateExt):
     self.can_define = CANDefine(DBC[CP.carFingerprint][Bus.party])
     self.shifter_values = self.can_define.dv["DI_systemStatus"]["DI_gear"]
 
-    self.autopark = False
-    self.autopark_prev = False
+    self.summon = False
+    self.summon_prev = False
     self.cruise_enabled_prev = False
     self.fsd14_error_logged = False
     self.suspected_fsd14 = False
@@ -28,13 +28,13 @@ class CarState(CarStateBase, CarStateExt):
     self.hands_on_level = 0
     self.das_control = None
 
-  def update_autopark_state(self, autopark_state: str, cruise_enabled: bool):
-    autopark_now = autopark_state in ("ACTIVE", "COMPLETE", "SELFPARK_STARTED")
-    if autopark_now and not self.autopark_prev and not self.cruise_enabled_prev:
-      self.autopark = True
-    if not autopark_now:
-      self.autopark = False
-    self.autopark_prev = autopark_now
+  def update_summon_state(self, summon_state: str, cruise_enabled: bool):
+    summon_now = summon_state in ("ACTIVE", "COMPLETE", "SELFPARK_STARTED")
+    if summon_now and not self.summon_prev and not self.cruise_enabled_prev:
+      self.summon = True
+    if not summon_now:
+      self.summon = False
+    self.summon_prev = summon_now
     self.cruise_enabled_prev = cruise_enabled
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
@@ -46,6 +46,13 @@ class CarState(CarStateBase, CarStateExt):
     # Vehicle speed
     ret.vEgoRaw = cp_party.vl["DI_speed"]["DI_vehicleSpeed"] * CV.KPH_TO_MS
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
+
+    # Displayed speed
+    ui_speed_units = self.can_define.dv["DI_speed"]["DI_uiSpeedUnits"].get(int(cp_party.vl["DI_speed"]["DI_uiSpeedUnits"]), None)
+    if ui_speed_units == "DI_SPEED_KPH":
+      ret.vEgoCluster = cp_party.vl["DI_speed"]["DI_uiSpeed"] * CV.KPH_TO_MS
+    elif ui_speed_units == "DI_SPEED_MPH":
+      ret.vEgoCluster = cp_party.vl["DI_speed"]["DI_uiSpeed"] * CV.MPH_TO_MS
 
     # Gas pedal
     ret.gasPressed = cp_party.vl["DI_systemStatus"]["DI_accelPedalPos"] > 0
@@ -77,12 +84,13 @@ class CarState(CarStateBase, CarStateExt):
     cruise_state = self.can_define.dv["DI_state"]["DI_cruiseState"].get(int(cp_party.vl["DI_state"]["DI_cruiseState"]), None)
     speed_units = self.can_define.dv["DI_state"]["DI_speedUnits"].get(int(cp_party.vl["DI_state"]["DI_speedUnits"]), None)
 
-    autopark_state = self.can_define.dv["DI_state"]["DI_autoparkState"].get(int(cp_party.vl["DI_state"]["DI_autoparkState"]), None)
+    # DI_autoparkState is used by Summon, not autopark (which uses DAS_autopilotState = ACTIVE_AUTOPARK)
+    summon_state = self.can_define.dv["DI_state"]["DI_autoparkState"].get(int(cp_party.vl["DI_state"]["DI_autoparkState"]), None)
     cruise_enabled = cruise_state in ("ENABLED", "STANDSTILL", "OVERRIDE", "PRE_FAULT", "PRE_CANCEL")
-    self.update_autopark_state(autopark_state, cruise_enabled)
+    self.update_summon_state(summon_state, cruise_enabled)
 
     # Match panda safety cruise engaged logic
-    ret.cruiseState.enabled = cruise_enabled and not self.autopark
+    ret.cruiseState.enabled = cruise_enabled and not self.summon
     if speed_units == "KPH":
       ret.cruiseState.speed = max(cp_party.vl["DI_state"]["DI_digitalSpeed"] * CV.KPH_TO_MS, 1e-3)
     elif speed_units == "MPH":
@@ -119,10 +127,10 @@ class CarState(CarStateBase, CarStateExt):
     lkas_ctrl_type = get_steer_ctrl_type(self.CP.flags, 2)
     ret.stockLkas = cp_ap_party.vl["DAS_steeringControl"]["DAS_steeringControlType"] == lkas_ctrl_type  # LANE_KEEP_ASSIST
 
-    # Stock Autosteer should be off (includes FSD)
+    # Stock Autosteer should be disengaged (includes FSD)
     # TODO: find for TESLA_MODEL_X and HW2.5 vehicles
     if not (self.CP.flags & TeslaFlags.MISSING_DAS_SETTINGS):
-      ret.invalidLkasSetting = cp_ap_party.vl["DAS_settings"]["DAS_autosteerEnabled"] != 0
+      ret.invalidLkasSetting = cp_ap_party.vl["DAS_status"]["DAS_autopilotState"] not in (0, 1, 2) # DISABLED, UNAVAILABLE, AVAILABLE
 
       # Because we don't have FSD 14 detection outside of a set of FW, we should check if this FW is accidentally missing from FSD_14_FW
       # 1. If in Autosteer or FSD, already caught by invalidLkasSetting
