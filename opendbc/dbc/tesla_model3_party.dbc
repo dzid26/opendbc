@@ -194,6 +194,7 @@ BO_ 599 DI_speed: 8 PARTY
  SG_ DI_uiSpeedUnits : 33|1@1+ (1,0) [0|1] ""  das
  SG_ DI_uiSpeed : 24|8@1+ (1,0) [0|254] ""  das
  SG_ DI_vehicleSpeed : 12|12@1+ (0.08,-40) [-40|285] "kph"  park
+ SG_ DI_vehicleSpeed_new : 43|13@1+ (0.08,-40) [-40|285] "kph"  park
  SG_ DI_speedCounter : 8|4@1+ (1,0) [0|15] ""  park
  SG_ DI_speedChecksum : 0|8@1+ (1,0) [0|255] ""  park
 
@@ -425,6 +426,7 @@ VAL_ 880 EPAS3S_currentTuneMode 3 "STEERING_TUNE_RWD_COMFORT" 1 "STEERING_TUNE_D
 VAL_ 599 DI_uiSpeedUnits 0 "DI_SPEED_MPH" 1 "DI_SPEED_KPH" ;
 VAL_ 599 DI_uiSpeed 255 "DI_UI_SPEED_SNA" ;
 VAL_ 599 DI_vehicleSpeed 4095 "SNA" ;
+VAL_ 599 DI_vehicleSpeed_new 8191 "SNA" ;
 VAL_ 637 APS_eacAllow 0 "INHIBIT" 1 "ALLOW" 2 "RESERVED" 3 "SNA";
 VAL_ 1160 DAS_steeringControlType 2 "LANE_KEEP_ASSIST" 0 "NONE" 1 "ANGLE_CONTROL" 3 "EMERGENCY_LANE_KEEP" ;
 VAL_ 1160 DAS_steeringAngleRequest 16384 "ZERO_ANGLE" ;
