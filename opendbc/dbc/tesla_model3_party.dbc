@@ -62,14 +62,6 @@ BO_ 264 DI_torque: 8 PARTY
  SG_ DI_torqueCounter : 8|4@1+ (1,0) [0|15] ""  epas3s
  SG_ DI_torqueChecksum : 0|8@1+ (1,0) [0|255] ""  epas3s
 
-BO_ 585 SCCM_leftStalk: 3 PARTY
- SG_ SCCM_leftStalkReserved1 : 19|5@1+ (1,0) [0|31] ""  X
- SG_ SCCM_turnIndicatorStalkStatus : 16|3@1+ (1,0) [0|5] ""  park
- SG_ SCCM_washWipeButtonStatus : 14|2@1+ (1,0) [0|3] ""  X
- SG_ SCCM_highBeamStalkStatus : 12|2@1+ (1,0) [0|3] ""  X
- SG_ SCCM_leftStalkCounter : 8|4@1+ (1,0) [0|15] ""  X
- SG_ SCCM_leftStalkCrc : 0|8@1+ (1,0) [0|255] ""  X
-
 BO_ 280 DI_systemStatus: 8 PARTY
  SG_ DI_trackModeState : 48|2@1+ (1,0) [0|2] ""  X
  SG_ DI_keepAliveRequest : 47|1@1+ (1,0) [0|1] ""  X
@@ -118,17 +110,6 @@ BO_ 373 ESP_wheelSpeeds: 8 CH
  SG_ ESP_wheelSpeedReL : 26|13@1+ (0.04,0) [0|327.64] "km/h"  das
  SG_ ESP_wheelSpeedFrR : 13|13@1+ (0.04,0) [0|327.64] "km/h"  das
  SG_ ESP_wheelSpeedFrL : 0|13@1+ (0.04,0) [0|327.64] "km/h"  das
-
-BO_ 969 APS_status: 4 PARTY
- SG_ APS_statusCounter : 22|4@1+ (1,0) [0|15] ""  X
- SG_ APS_apbGpioState : 20|2@1+ (1,0) [0|3] ""  gtw
- SG_ APS_apbStatusMonitorState : 16|3@1+ (1,0) [0|7] ""  gtw
- SG_ APS_switchState : 15|1@1+ (1,0) [0|1] ""  X
- SG_ APS_eacInternalState : 12|3@1+ (1,0) [0|7] ""  gtw
- SG_ APS_appGpioState : 10|2@1+ (1,0) [0|3] ""  gtw
- SG_ APS_canMaster : 8|2@1+ (1,0) [0|3] ""  gtw
- SG_ APS_vehBehaviorState : 4|3@1+ (1,0) [0|7] ""  gtw
- SG_ APS_appStatusMonitorState : 0|3@1+ (1,0) [0|7] ""  gtw
 
 BO_ 925 IBST_status: 5 PARTY
  SG_ IBST_sInputRodDriver : 21|12@1+ (0.015625,-5) [-5|47] "mm"  gtw
@@ -320,6 +301,51 @@ BO_ 325 ESP_status: 8 PARTY
  SG_ ESP_steeringAngleQF : 27|1@1+ (1,0) [0|0] ""  X
  SG_ ESP_yawRateQF : 26|1@1+ (1,0) [0|0] ""  X
 
+BO_ 259 VCRIGHT_doorStatus: 8 VEH
+ SG_ VCRIGHT_reservedForBackCompat : 28|2@1+ (1,0) [0|3] "" X
+ SG_ VCRIGHT_trunkLatchStatus : 56|4@1+ (1,0) [0|8] "" di
+ SG_ VCRIGHT_mirrorFoldState : 52|3@1+ (1,0) [0|4] "" gtw
+ SG_ VCRIGHT_rearLatchStatus : 4|4@1+ (1,0) [0|8] "" aps
+ SG_ VCRIGHT_mirrorTiltYPosition : 41|8@1+ (0.02,0) [0|5] "V" gtw
+ SG_ VCRIGHT_frontRelActuatorSwitch : 12|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCRIGHT_mirrorRecallState : 60|3@1+ (1,0) [0|5] "" gtw
+ SG_ VCRIGHT_frontIntSwitchPressed : 31|1@1+ (1,0) [0|1] "" aps
+ SG_ VCRIGHT_mirrorState : 49|3@1+ (1,0) [0|4] "" gtw
+ SG_ VCRIGHT_rearRelActuatorSwitch : 13|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCRIGHT_frontHandlePulledPersist : 30|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCRIGHT_mirrorTiltXPosition : 33|8@1+ (0.02,0) [0|5] "V" gtw
+ SG_ VCRIGHT_mirrorDipped : 63|1@1+ (1,0) [0|1] "" X
+ SG_ VCRIGHT_frontHandlePulled : 10|1@1+ (1,0) [0|1] "" aps
+ SG_ VCRIGHT_frontLatchStatus : 0|4@1+ (1,0) [0|8] "" aps
+ SG_ VCRIGHT_rearHandlePulled : 11|1@1+ (1,0) [0|1] "" aps
+ SG_ VCRIGHT_frontHandlePWM : 14|7@1+ (1,0) [0|100] "%" X
+ SG_ VCRIGHT_frontLatchSwitch : 8|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCRIGHT_rearLatchSwitch : 9|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCRIGHT_rearHandlePWM : 21|7@1+ (1,0) [0|100] "%" X
+ SG_ VCRIGHT_rearIntSwitchPressed : 32|1@1+ (1,0) [0|1] "" aps
+
+BO_ 258 VCLEFT_doorStatus: 8 VEH
+ SG_ VCLEFT_mirrorDipped : 61|1@1+ (1,0) [0|1] "" X
+ SG_ VCLEFT_frontHandlePulledPersist : 62|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCLEFT_mirrorRecallState : 55|3@1+ (1,0) [0|5] "" gtw
+ SG_ VCLEFT_rearIntSwitchPressed : 32|1@1+ (1,0) [0|1] "" aps
+ SG_ VCLEFT_rearLatchSwitch : 9|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCLEFT_rearHandlePWM : 24|7@1+ (1,0) [0|100] "%" X
+ SG_ VCLEFT_frontLatchSwitch : 8|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCLEFT_frontHandlePWM : 16|7@1+ (1,0) [0|100] "%" X
+ SG_ VCLEFT_rearHandlePulled : 11|1@1+ (1,0) [0|1] "" aps
+ SG_ VCLEFT_rearLatchStatus : 4|4@1+ (1,0) [0|8] "" aps
+ SG_ VCLEFT_frontHandlePulled : 10|1@1+ (1,0) [0|1] "" aps
+ SG_ VCLEFT_mirrorTiltXPosition : 33|8@1+ (0.02,0) [0|5] "V" gtw
+ SG_ VCLEFT_mirrorState : 49|3@1+ (1,0) [0|4] "" gtw
+ SG_ VCLEFT_frontIntSwitchPressed : 31|1@1+ (1,0) [0|1] "" aps
+ SG_ VCLEFT_rearRelActuatorSwitch : 13|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCLEFT_mirrorHeatState : 58|3@1+ (1,0) [0|4] "" X
+ SG_ VCLEFT_frontRelActuatorSwitch : 12|1@1+ (1,0) [0|1] "" gtw
+ SG_ VCLEFT_mirrorTiltYPosition : 41|8@1+ (0.02,0) [0|5] "V" gtw
+ SG_ VCLEFT_frontLatchStatus : 0|4@1+ (1,0) [0|8] "" aps
+ SG_ VCLEFT_mirrorFoldState : 52|3@1+ (1,0) [0|4] "" gtw
+
 CM_ BO_ 605 "Bytes change when toggling between FSD and AP, as well as Traffic Light and Stop Sign Control in TACC";
 
 CM_ SG_ 659 DAS_autosteerEnabled "1 if Autosteer or FSD is enabled, 0 otherwise";
@@ -489,3 +515,16 @@ VAL_ 325 ESP_ptcTargetState 0 "FAULT" 1 "BACKUP" 2 "ON" 3 "SNA";
 VAL_ 325 ESP_stabilityControlSts2 0 "INIT" 1 "ON" 2 "ENGAGED" 3 "FAULTED";
 VAL_ 325 ESP_steeringAngleQF 0 "UNDEFINABLE_ACCURACY" 1 "IN_SPEC";
 VAL_ 325 ESP_yawRateQF 0 "UNDEFINABLE_ACCURACY" 1 "IN_SPEC";
+
+VAL_ 259 VCRIGHT_trunkLatchStatus 8 "LATCH_FAULT" 2 "LATCH_CLOSED" 1 "LATCH_OPENED" 3 "LATCH_CLOSING" 7 "LATCH_DEFAULT" 4 "LATCH_OPENING" 5 "LATCH_AJAR" 6 "LATCH_TIMEOUT" 0 "LATCH_SNA";
+VAL_ 259 VCRIGHT_mirrorFoldState 4 "MIRROR_FOLD_STATE_UNFOLDING" 1 "MIRROR_FOLD_STATE_FOLDED" 3 "MIRROR_FOLD_STATE_FOLDING" 0 "MIRROR_FOLD_STATE_UNKNOWN" 2 "MIRROR_FOLD_STATE_UNFOLDED";
+VAL_ 259 VCRIGHT_rearLatchStatus 8 "LATCH_FAULT" 2 "LATCH_CLOSED" 1 "LATCH_OPENED" 3 "LATCH_CLOSING" 7 "LATCH_DEFAULT" 4 "LATCH_OPENING" 5 "LATCH_AJAR" 6 "LATCH_TIMEOUT" 0 "LATCH_SNA";
+VAL_ 259 VCRIGHT_mirrorRecallState 5 "MIRROR_RECALL_STATE_RECALLING_STOPPED" 2 "MIRROR_RECALL_STATE_RECALLING_AXIS_2" 0 "MIRROR_RECALL_STATE_INIT" 3 "MIRROR_RECALL_STATE_RECALLING_COMPLETE" 4 "MIRROR_RECALL_STATE_RECALLING_FAILED" 1 "MIRROR_RECALL_STATE_RECALLING_AXIS_1";
+VAL_ 259 VCRIGHT_mirrorState 3 "MIRROR_STATE_FOLD_UNFOLD" 1 "MIRROR_STATE_TILT_X" 0 "MIRROR_STATE_IDLE" 2 "MIRROR_STATE_TILT_Y" 4 "MIRROR_STATE_RECALL";
+VAL_ 259 VCRIGHT_frontLatchStatus 8 "LATCH_FAULT" 2 "LATCH_CLOSED" 1 "LATCH_OPENED" 3 "LATCH_CLOSING" 7 "LATCH_DEFAULT" 4 "LATCH_OPENING" 5 "LATCH_AJAR" 6 "LATCH_TIMEOUT" 0 "LATCH_SNA";
+VAL_ 258 VCLEFT_mirrorRecallState 5 "MIRROR_RECALL_STATE_RECALLING_STOPPED" 2 "MIRROR_RECALL_STATE_RECALLING_AXIS_2" 0 "MIRROR_RECALL_STATE_INIT" 3 "MIRROR_RECALL_STATE_RECALLING_COMPLETE" 4 "MIRROR_RECALL_STATE_RECALLING_FAILED" 1 "MIRROR_RECALL_STATE_RECALLING_AXIS_1";
+VAL_ 258 VCLEFT_rearLatchStatus 8 "LATCH_FAULT" 2 "LATCH_CLOSED" 1 "LATCH_OPENED" 3 "LATCH_CLOSING" 7 "LATCH_DEFAULT" 4 "LATCH_OPENING" 5 "LATCH_AJAR" 6 "LATCH_TIMEOUT" 0 "LATCH_SNA";
+VAL_ 258 VCLEFT_mirrorState 3 "MIRROR_STATE_FOLD_UNFOLD" 1 "MIRROR_STATE_TILT_X" 0 "MIRROR_STATE_IDLE" 2 "MIRROR_STATE_TILT_Y" 4 "MIRROR_STATE_RECALL";
+VAL_ 258 VCLEFT_mirrorHeatState 2 "HEATER_STATE_OFF" 4 "HEATER_STATE_FAULT" 1 "HEATER_STATE_ON" 0 "HEATER_STATE_SNA" 3 "HEATER_STATE_OFF_UNAVAILABLE";
+VAL_ 258 VCLEFT_frontLatchStatus 8 "LATCH_FAULT" 2 "LATCH_CLOSED" 1 "LATCH_OPENED" 3 "LATCH_CLOSING" 7 "LATCH_DEFAULT" 4 "LATCH_OPENING" 5 "LATCH_AJAR" 6 "LATCH_TIMEOUT" 0 "LATCH_SNA";
+VAL_ 258 VCLEFT_mirrorFoldState 4 "MIRROR_FOLD_STATE_UNFOLDING" 1 "MIRROR_FOLD_STATE_FOLDED" 3 "MIRROR_FOLD_STATE_FOLDING" 0 "MIRROR_FOLD_STATE_UNKNOWN" 2 "MIRROR_FOLD_STATE_UNFOLDED";
