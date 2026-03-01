@@ -120,8 +120,11 @@ class CarState(CarStateBase, CarStateExt):
     ret.seatbeltUnlatched = cp_party.vl["UI_warning"]["buckleStatus"] != 1
 
     # Blindspot
-    ret.leftBlindspot = cp_ap_party.vl["DAS_status"]["DAS_blindSpotRearLeft"] != 0
-    ret.rightBlindspot = cp_ap_party.vl["DAS_status"]["DAS_blindSpotRearRight"] != 0
+    ap_lane_state = self.can_define.dv["DAS_status"]["DAS_autoLaneChangeState"].get(int(cp_ap_party.vl["DAS_status"]["DAS_autoLaneChangeState"]), None)
+    left_lane_available = ap_lane_state in ("ALC_AVAILABLE_ONLY_L", "ALC_AVAILABLE_BOTH")
+    right_lane_available = ap_lane_state in ("ALC_AVAILABLE_ONLY_R", "ALC_AVAILABLE_BOTH")
+    ret.leftBlindspot = cp_ap_party.vl["DAS_status"]["DAS_blindSpotRearLeft"] != 0 or not left_lane_available
+    ret.rightBlindspot = cp_ap_party.vl["DAS_status"]["DAS_blindSpotRearRight"] != 0 or not right_lane_available
 
     # AEB
     ret.stockAeb = cp_ap_party.vl["DAS_control"]["DAS_aebEvent"] == 1
