@@ -49,7 +49,7 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
   ANGLE_RATE_DOWN = None
 
   # Real time limits
-  LATERAL_FREQUENCY = 100  # Hz
+  LATERAL_FREQUENCY = 50  # Hz
 
   # Long control limits
   MAX_ACCEL = 2.0
