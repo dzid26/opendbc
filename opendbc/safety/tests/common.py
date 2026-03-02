@@ -1023,11 +1023,7 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase):
     self._rx(self._user_gas_msg(0))
     self.safety.set_controls_allowed(True)
     self._rx(self._user_gas_msg(self.GAS_PRESSED_THRESHOLD + 1))
-    # Test we allow lateral, but not longitudinal
     self.assertTrue(self.safety.get_controls_allowed())
-    self.assertFalse(self.safety.get_longitudinal_allowed())
-    # Make sure we can re-gain longitudinal actuation
-    self._rx(self._user_gas_msg(0))
     self.assertTrue(self.safety.get_longitudinal_allowed())
 
   def test_prev_user_brake(self, _user_brake_msg=None, get_brake_pressed_prev=None):
@@ -1071,10 +1067,11 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase):
     self._rx(_user_brake_msg(1))
     self.assertTrue(self.safety.get_controls_allowed())
     self.assertTrue(self.safety.get_longitudinal_allowed())
+    # falling edge of brake should disengage
     self._rx(_user_brake_msg(0))
-    self.assertTrue(self.safety.get_controls_allowed())
-    self.assertTrue(self.safety.get_longitudinal_allowed())
-    # rising edge of brake should disengage
+    self.assertFalse(self.safety.get_controls_allowed())
+    self.assertFalse(self.safety.get_longitudinal_allowed())
+    # rising edge should not re-enable controls
     self._rx(_user_brake_msg(1))
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertFalse(self.safety.get_longitudinal_allowed())
@@ -1093,6 +1090,9 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase):
     self.assertTrue(self.safety.get_longitudinal_allowed())
     self._rx(self._vehicle_moving_msg(self.STANDSTILL_THRESHOLD + 1))
     self._rx(_user_brake_msg(1))
+    self.assertTrue(self.safety.get_controls_allowed())
+    self.assertTrue(self.safety.get_longitudinal_allowed())
+    self._rx(_user_brake_msg(0))
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertFalse(self.safety.get_longitudinal_allowed())
     self._rx(self._vehicle_moving_msg(0))

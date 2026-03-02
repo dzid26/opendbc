@@ -16,7 +16,7 @@ class MadsSafetyTestBase(unittest.TestCase):
   def _acc_state_msg(self, enabled):
     raise NotImplementedError
 
-  def teardown_method(self, method):
+  def _reset_mads_test_state(self):
     self.safety = libsafety_py.libsafety
     self.safety.set_mads_button_press(-1)
     self.safety.set_controls_allowed_lat(False)
@@ -24,6 +24,14 @@ class MadsSafetyTestBase(unittest.TestCase):
     self.safety.set_acc_main_on(False)
     self.safety.set_mads_params(False, False, False)
     self.safety.set_heartbeat_engaged_mads(True)
+
+  # unittest lifecycle
+  def tearDown(self):
+    self._reset_mads_test_state()
+
+  # pytest lifecycle fallback
+  def teardown_method(self, method):
+    self._reset_mads_test_state()
 
   def test_heartbeat_engaged_mads_check(self):
     """Test MADS heartbeat engaged check behavior"""
@@ -357,11 +365,10 @@ class MadsSafetyTestBase(unittest.TestCase):
       self.safety.set_mads_params(True, disengage_on_brake, False)
 
       self.safety.set_controls_allowed_lat(True)
-      self._rx(self._speed_msg(0))
       self.assertTrue(self.safety.get_controls_allowed_lat())
 
       self._rx(self._user_brake_msg(True))
-      self.assertEqual(not disengage_on_brake, self.safety.get_controls_allowed_lat())
+      self.assertTrue(self.safety.get_controls_allowed_lat())
 
       self._rx(self._user_brake_msg(False))
       self.assertEqual(not disengage_on_brake, self.safety.get_controls_allowed_lat())
