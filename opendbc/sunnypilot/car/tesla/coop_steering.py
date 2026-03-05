@@ -30,6 +30,7 @@ STEER_OVERRIDE_MAX_LAT_ACCEL = 1.5 # m/s^2 - determines angle rate - speed depen
 STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 10 # deg/Nm stability and smoothness for angle control  # todo this could be increased after solving feedback stability
 
 # angle ramping
+STEER_OVERRIDE_CENTERING_MIN_SPEED = 0.1  # m/s, avoid springing back at standstill
 STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - speed dependent
 STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
 # stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
@@ -155,9 +156,9 @@ class CoopSteeringCarController:
       self.override_angle_accu -= unwind
 
     # torque biasing emulates the steering centering when released:
-    if self.override_angle_accu > 0 and abs(vEgo) > 0.1:
+    if self.override_angle_accu > 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED:
       torque_biased = driverTorque - STEER_OVERRIDE_MIN_TORQUE
-    elif self.override_angle_accu < 0 and abs(vEgo) > 0.1:
+    elif self.override_angle_accu < 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED:
       torque_biased = driverTorque + STEER_OVERRIDE_MIN_TORQUE
     else:
       # when override_angle_accu is reset this turns off  everything
