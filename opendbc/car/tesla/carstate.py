@@ -10,6 +10,7 @@ from opendbc.car.tesla.values import DBC, CANBUS, GEAR_MAP, STEER_THRESHOLD, Tes
 from opendbc.sunnypilot.car.tesla.carstate_ext import CarStateExt
 
 ButtonType = structs.CarState.ButtonEvent.Type
+STEERING_KNUCKLE_ARM_LENGTH_M = 0.11
 
 
 class CarState(CarStateBase, CarStateExt):
@@ -68,6 +69,8 @@ class CarState(CarStateBase, CarStateExt):
     ret.steeringAngleDeg = -epas_status["EPAS3S_internalSAS"]
     ret.steeringRateDeg = -cp_ap_party.vl["SCCM_steeringAngleSensor"]["SCCM_steeringAngleSpeed"]
     ret.steeringTorque = -epas_status["EPAS3S_torsionBarTorque"]
+    # Convert rack force to estimated steering-wheel torque using static rack geometry only - as if EPS was not present
+    ret.steeringTorqueEps = -epas_status["EPAS3S_steeringRackForce"] * STEERING_KNUCKLE_ARM_LENGTH_M / self.CP.steerRatio
 
     # stock handsOnLevel uses >0.5 for 0.25s, but is too slow
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > STEER_THRESHOLD, 5)
