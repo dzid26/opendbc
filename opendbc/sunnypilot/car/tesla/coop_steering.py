@@ -226,7 +226,7 @@ class CoopSteeringCarController:
     return angle_override
 
   def apply_override_angle_progressive(self, lat_active: bool, driverTorque: float, vEgo: float,
-                                    VM: VehicleModel, unwind_scale: float = 1.0) -> float:
+                                    VM: VehicleModel, scale: float = 1.0) -> float:
     """
     Converts steering torque to steering rotation rate.
     Physically angle rate is related to viscous damping of tires rotating on the ground.
@@ -238,7 +238,7 @@ class CoopSteeringCarController:
       return 0
 
     # unwind accumulator toward zero if the previous loop saturated (apply_steer_angle_limits_vm)
-    unwind = (self.coop_apply_angle_last - self.coop_apply_angle_last_sat) * unwind_scale
+    unwind = (self.coop_apply_angle_last - self.coop_apply_angle_last_sat)
     if self.override_angle_accu * unwind > 0:
       unwind = apply_bounds(unwind, abs(self.override_angle_accu))
       self.override_angle_accu -= unwind
@@ -252,7 +252,9 @@ class CoopSteeringCarController:
       # when override_angle_accu is reset this turns off  everything
       torque_biased = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
 
-    # higher rate when centering
+    torque_biased *= scale
+
+    # determine steering rotation rate - switch to higher rate when centering
     angle_override_delta = calc_override_angle_delta_limited(torque_biased, vEgo, VM,
                           STEER_OVERRIDE_MAX_LAT_JERK if (torque_biased * self.override_angle_accu) > 0
                           else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
@@ -287,9 +289,9 @@ class CoopSteeringCarController:
 
     angle_override_direct = self.apply_override_angle_direct(lat_active, driverTorque, vEgo, VM)
     angle_override_progressive = self.apply_override_angle_progressive(lat_active, driverTorque, vEgo, VM,
-                                                                 unwind_scale=progressive_control)
+                                                                 scale=progressive_control)
 
-    return angle_override_direct * direct_control + angle_override_progressive * progressive_control
+    return angle_override_direct * direct_control + angle_override_progressive
 
   def overriding_steer_desired_accel_limit(self, lat_active: bool, apply_angle: float, vEgo: float, steeringTorque: float) -> float:
     """
