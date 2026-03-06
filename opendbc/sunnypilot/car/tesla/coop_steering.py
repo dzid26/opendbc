@@ -237,12 +237,6 @@ class CoopSteeringCarController:
       self.override_angle_accu = 0
       return 0
 
-    # unwind accumulator toward zero if the previous loop saturated (apply_steer_angle_limits_vm)
-    unwind = (self.coop_apply_angle_last - self.coop_apply_angle_last_sat)
-    if self.override_angle_accu * unwind > 0:
-      unwind = apply_bounds(unwind, abs(self.override_angle_accu))
-      self.override_angle_accu -= unwind
-
     # torque biasing emulates the steering centering when released:
     if self.override_angle_accu > 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED:
       torque_biased = driverTorque - STEER_OVERRIDE_MIN_TORQUE
@@ -268,6 +262,12 @@ class CoopSteeringCarController:
     self.override_angle_accu = new_override_angle_accu
 
     return self.override_angle_accu
+
+  def unwind_override_angle_progressive(self, lat_active: bool, sat_error: float) -> None:
+    """Apply same-frame anti-windup after the final steering angle limiter."""
+    if self.override_angle_accu * sat_error > 0:
+      sat_error = apply_bounds(sat_error, abs(self.override_angle_accu))
+      self.override_angle_accu -= sat_error
 
   def apply_override_angle_combined(self, lat_active: bool, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
@@ -347,9 +347,15 @@ class CoopSteeringCarController:
 
       apply_angle += self.apply_override_angle_combined(lat_active, CS.out.steeringTorque, CS.out.vEgo, VM)
 
-    # final rate limit - matching panda safety
-    self.coop_apply_angle_last = apply_angle
-    self.coop_apply_angle_last_sat = apply_steer_angle_limits_vm(apply_angle, self.coop_apply_angle_last_sat, CS.out.vEgoRaw,
-                                                    CS.out.steeringAngleDeg, lat_active, CoopSteeringCarControllerParams, VM)
+      # final rate limit - matching panda safety
+      self.coop_apply_angle_last = apply_angle
+      self.coop_apply_angle_last_sat = apply_steer_angle_limits_vm(apply_angle, self.coop_apply_angle_last_sat, CS.out.vEgoRaw,
+                                                      CS.out.steeringAngleDeg, lat_active, CoopSteeringCarControllerParams, VM)
+      sat_error = self.coop_apply_angle_last - self.coop_apply_angle_last_sat
+      self.unwind_override_angle_progressive(lat_active, sat_error)
+    else:
+      self.override_angle_accu = 0
+      self.coop_apply_angle_last = apply_angle
+      self.coop_apply_angle_last_sat = apply_angle
 
     return CoopSteeringDataSP(self.coop_apply_angle_last_sat, lat_active)
