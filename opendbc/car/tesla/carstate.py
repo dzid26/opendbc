@@ -71,7 +71,7 @@ class CarState(CarStateBase, CarStateExt):
     ret.steeringRateDeg = -cp_ap_party.vl["SCCM_steeringAngleSensor"]["SCCM_steeringAngleSpeed"]
     ret.steeringTorque = -epas_status["EPAS3S_torsionBarTorque"]
     # Convert rack force to estimated steering-wheel torque using static rack geometry only.
-    ret.steeringTorqueEps = epas_status["EPAS3S_steeringRackForce"] * STEERING_KNUCKLE_ARM_LENGTH_M / self.CP.steerRatio
+    ret.steeringTorqueEps = -epas_status["EPAS3S_steeringRackForce"] * STEERING_KNUCKLE_ARM_LENGTH_M / self.CP.steerRatio
 
     # stock handsOnLevel uses >0.5 for 0.25s, but is too slow
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > STEER_THRESHOLD, 5)
