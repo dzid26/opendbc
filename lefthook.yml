@@ -9,6 +9,34 @@ output:
   #- execution_info # Print `EXECUTE > ...` logging
   - skips          # Print "skip" (i.e. no files matched)
 
+pre-commit:
+  commands:
+    tesla-interface-tests:
+      run: |
+        stashed=0
+        status=0
+
+        restore_stash() {
+          if [ "$stashed" -eq 1 ]; then
+            if ! git stash pop --quiet >/dev/null; then
+              echo "Failed to restore unstaged changes from stash."
+              status=1
+            fi
+          fi
+        }
+
+        trap restore_stash EXIT INT TERM
+
+        if ! git diff --quiet -- || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+          git stash push --keep-index --include-untracked --quiet --message lefthook-pre-commit-staged-only
+          stashed=1
+        fi
+
+        .venv/bin/ruff check . || status=$?
+        .venv/bin/python -m pytest -q -n 0 'opendbc/car/tests/test_car_interfaces.py::TestCarInterfaces::test_car_interfaces[TESLA_MODEL_3]' || status=$?
+
+        exit "$status"
+
 test:
   parallel: true
   commands:
