@@ -35,7 +35,7 @@ STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - spee
 STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
 # stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
-STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 80 # deg/s/Nm - should be less than CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE/DT_CTRL/STEER_OVERRIDE_TORQUE_RANGE
+STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 100 # deg/s/Nm - should be less than CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE/DT_CTRL/STEER_OVERRIDE_TORQUE_RANGE
 
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = 6 # m/s - below this speed the desired angle limiter is active
@@ -277,19 +277,21 @@ class CoopSteeringCarController:
     if not lat_active:
       return 0
 
-    # calculate capability of direct angle override (unlimited above ~36kph)
+    # calculate capability of direct angle override (fully active above ~36kph)
     direct_override_capability = (calc_override_angle_limited(STEER_OVERRIDE_TORQUE_RANGE, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL) /
                    get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM))
 
     # Direct override capability approaches 0 at standstill as desired lat accel approaches infinity.
-    # Allow more progressive override at when direct override capability drops.
-    progressive_control = 1.0 - direct_override_capability
+    # Use that as a scale to remove direct override influence at low speeds, ensuring a single
+    # gain contribution in the torque-to-angle conversion.
+    direct_control = direct_override_capability
+    progressive_control = 1.0 - direct_control
 
     angle_override_direct = self.apply_override_angle_direct(lat_active, driverTorque, vEgo, VM)
     angle_override_progressive = self.apply_override_angle_progressive(lat_active, driverTorque, vEgo, VM,
                                                                  scale=progressive_control)
 
-    return angle_override_direct + angle_override_progressive
+    return angle_override_direct * direct_control + angle_override_progressive
 
   def overriding_steer_desired_accel_limit(self, lat_active: bool, apply_angle: float, vEgo: float, steeringTorque: float) -> float:
     """
