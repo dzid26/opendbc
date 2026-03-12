@@ -1,6 +1,6 @@
 import copy
 from opendbc.can import CANDefine, CANParser
-from opendbc.car import Bus, structs
+from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.carlog import carlog
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
@@ -27,6 +27,9 @@ class CarState(CarStateBase, CarStateExt):
 
     self.hands_on_level = 0
     self.das_control = None
+    self.dCruiseCounter = 0
+    self.dCruiseCancel = False
+    self.dCruiseCancel_prev = False
 
   def update_summon_state(self, summon_state: str, cruise_enabled: bool):
     summon_now = summon_state in ("ACTIVE", "COMPLETE", "SELFPARK_STARTED")
@@ -103,6 +106,20 @@ class CarState(CarStateBase, CarStateExt):
     ret.cruiseState.standstill = False  # This needs to be false, since we can resume from stop without sending anything special
     ret.standstill = cp_party.vl["ESP_B"]["ESP_vehicleStandstillSts"] == 1
     ret.accFaulted = cruise_state == "FAULT"
+
+    # correlate scroll wheel press with OEM cruise cancel
+    if cp_party.vl["UI_warning"]["scrollWheelPressed"]:
+      self.dCruiseCounter = 16
+
+    self.dCruiseCancel = cp_ap_party.vl["DAS_control"]["DAS_accState"] == 13 and self.dCruiseCounter > 0
+    self.dCruiseCancel_prev = self.dCruiseCancel
+
+    if self.dCruiseCounter > 0:
+      self.dCruiseCounter -= 1
+
+    ret.buttonEvents = [
+      *create_button_events(self.dCruiseCancel, self.dCruiseCancel_prev, {1: ButtonType.cancel}),
+    ]
 
     # Gear
     ret.gearShifter = GEAR_MAP[self.can_define.dv["DI_systemStatus"]["DI_gear"].get(int(cp_party.vl["DI_systemStatus"]["DI_gear"]), "DI_GEAR_INVALID")]
