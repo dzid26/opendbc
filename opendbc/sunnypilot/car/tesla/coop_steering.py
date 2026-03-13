@@ -40,6 +40,7 @@ STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = CoopSteeringCarControllerParams.ANGLE_LI
 # stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
 STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 100 # deg/s/Nm - should be less than CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE/DT_CTRL/STEER_OVERRIDE_TORQUE_RANGE
+STEER_OVERRIDE_OPPOSING_DELTA_CONSUME_GAIN = 1
 
 # model fighting mitigation
 STEER_DESIRED_LIMITER_ALLOW_SPEED = 6 # m/s - below this speed the desired angle limiter is active
@@ -249,8 +250,11 @@ class CoopSteeringCarController:
                           else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
 
     # subtract same-direction angle delta already applied upstream
-    if angle_override_delta * apply_angle_delta > 0:
+    if torque_biased * apply_angle_delta > 0:
       angle_override_delta = angle_override_delta - apply_bounds(apply_angle_delta, abs(angle_override_delta))
+    elif torque_biased * apply_angle_delta < 0:
+      opposing_consume_ratio = STEER_OVERRIDE_OPPOSING_DELTA_CONSUME_GAIN * max(0.0, abs(torque_biased) / STEER_OVERRIDE_TORQUE_RANGE)
+      angle_override_delta = angle_override_delta - opposing_consume_ratio * apply_angle_delta
 
     # ramp the angle
     new_override_angle_accu = self.override_angle_accu + angle_override_delta
