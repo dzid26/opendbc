@@ -35,6 +35,7 @@ STEER_OVERRIDE_TARGET_ANGLE_MAX = CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_M
 # override angle ramp control
 STEER_OVERRIDE_DELTA_GAIN_LIMIT = 125 # deg/s/Nm
 STEER_OVERRIDE_DELTA_GAIN_LIMIT_CENTERING = CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_LAT_CTRL / STEER_OVERRIDE_TORQUE_RANGE
+STEER_OVERRIDE_OPPOSING_DELTA_CONSUME_GAIN = 1
 
 
 CoopSteeringDataSP = namedtuple("CoopSteeringDataSP",
@@ -141,6 +142,9 @@ class CoopSteeringCarController:
     # subtract same-direction angle delta already applied upstream
     if angle_override_delta * apply_angle_delta > 0:
       angle_override_delta = angle_override_delta - apply_bounds(apply_angle_delta, abs(angle_override_delta))
+    elif angle_override_delta * apply_angle_delta < 0:
+      opposing_consume_ratio = STEER_OVERRIDE_OPPOSING_DELTA_CONSUME_GAIN * max(0.0, abs(hold_torque_delta) / STEER_OVERRIDE_TORQUE_RANGE)
+      angle_override_delta = angle_override_delta - opposing_consume_ratio * apply_angle_delta
 
     # ramp the angle
     self.angle_override += angle_override_delta
