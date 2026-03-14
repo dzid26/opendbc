@@ -62,7 +62,7 @@ class CarController(CarControllerBase):
     # TODO: HUD control
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
-    new_actuators.accel = self.coop_steer.coop_apply_angle_last_sat # debug
+    new_actuators.accel = self.coop_steer.coop_apply_angle_sat_last # debug
     new_actuators.curvature = float(self.coop_steer.debug_angle_desired_limited) # debug
     new_actuators.torque = float(self.coop_steer.override_angle_accu) # debug
 
