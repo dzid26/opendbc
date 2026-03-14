@@ -29,17 +29,13 @@ STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages
 
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - determines angle rate - speed dependent - similar to Tesla comfort steering mode
-STEER_OVERRIDE_LOW_SPEED_LO = 0
-STEER_OVERRIDE_LOW_SPEED_HI = 3
-STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT = 10 # deg/Nm stability and smoothness for angle control  # todo this could be increased after solving feedback stability
 
 # angle ramping
 STEER_OVERRIDE_CENTERING_MIN_SPEED = 0.1  # m/s, avoid springing back at standstill
-STEER_OVERRIDE_MAX_LAT_JERK = 2.0 # m/s^3 - determines angle ramping rate - speed dependent
-STEER_OVERRIDE_MAX_LAT_JERK_CENTERING = 8 * CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK # m/s^3 -  for low speed angle ramp down
-# stability and smoothness for angle ramp control - at very low speeds this takes precedence over jerk settings
 STEER_OVERRIDE_TORQUE_RANGE = STEER_OVERRIDE_MAX_TORQUE - STEER_OVERRIDE_MIN_TORQUE
-STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT = 100 # deg/s/Nm - should be less than CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE/DT_CTRL/STEER_OVERRIDE_TORQUE_RANGE
+# stability and smoothness for angle ramp control at low speeds
+STEER_OVERRIDE_DELTA_GAIN_LIMIT = 100 # deg/s/Nm
+STEER_OVERRIDE_DELTA_GAIN_LIMIT_CENTERING = CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_LAT_CTRL / STEER_OVERRIDE_TORQUE_RANGE
 STEER_OVERRIDE_OPPOSING_DELTA_CONSUME_GAIN = 1
 
 # model fighting mitigation
@@ -70,37 +66,18 @@ def apply_deadzone(signal: float, deadzone: float) -> float:
 def calc_override_angle_limited(torque: float, vEgo: float, VM: VehicleModel, lat_accel) -> float:
   """
   Map driver torque to lateral acceleration and convert to steering angle.
-  Limit gain for stability with EPS and torque sensor interaction.
   """
 
   # lateral accel is linear in respect to angle so it's fine to interpolate it with torque
   torque_to_angle = get_steer_from_lat_accel(lat_accel, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
-
-  # limit the gain to prevent jerkiness and instability
-  gain_limit = np.interp(vEgo, [STEER_OVERRIDE_LOW_SPEED_LO, STEER_OVERRIDE_LOW_SPEED_HI],
-                         [0, STEER_OVERRIDE_LAT_ACCEL_GAIN_LIMIT])
-  override_angle_target = torque * min(torque_to_angle, gain_limit)
-
-  return override_angle_target
+  return torque * torque_to_angle
 
 
-def calc_override_angle_delta_limited(torque: float, vEgo: float, VM: VehicleModel, lat_jerk) -> float:
+def calc_override_angle_delta_limit(torque: float, gain_limit: float) -> float:
   """
-  Map driver torque to lateral jerk and convert to steering speed.
-  Limit gain for stability with EPS and torque sensor interaction.
+  Limit torque to angle delta conversion for stability and
   """
-
-  # prevents windup in carcontroller rate limiter
-  lat_jerk = min(lat_jerk, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_LATERAL_JERK)
-
-  # lateral accel is linear in respect to angle so it's fine to interpolate it with torque
-  torque_to_angle = get_steer_from_lat_accel(lat_jerk, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
-  # limit the gain to prevent jerkiness and instability
-  gain_limit = min(STEER_OVERRIDE_LAT_JERK_GAIN_LIMIT, CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_CTRL / STEER_OVERRIDE_TORQUE_RANGE)
-  override_angle_rate = torque * min(torque_to_angle, gain_limit)
-
-  # prevent windup in angle rate limiter
-  return apply_bounds(override_angle_rate * DT_LAT_CTRL, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
+  return apply_bounds(torque * gain_limit * DT_LAT_CTRL, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
 
 
 class SteerRateLimiter:
@@ -196,8 +173,8 @@ class SteerJerkLimiter:
 
 class CoopSteeringCarController:
   def __init__(self):
+    self.apply_angle_last = 0
     self.coop_apply_angle_sat_last = 0
-    self.coop_apply_angle_with_direct_override_last = 0
     self.override_angle_accu = 0
     self.override_active_counter = 0  # Counter for how many cycles torque is below threshold
     self.resume_rate_limiter_delta = SteerRateLimiter()
@@ -206,18 +183,14 @@ class CoopSteeringCarController:
     self.debug_angle_desired_limited = 0
 
   def reset_override_state(self, apply_angle: float) -> None:
+    self.apply_angle_last = apply_angle
     self.override_angle_accu = 0
     self.coop_apply_angle_sat_last = apply_angle
-    self.coop_apply_angle_with_direct_override_last = apply_angle
     self.override_accel_rate_limiter.reset(apply_angle)
 
   def apply_override_angle_direct(self, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
-    Emulates steering springiness based on lateral acceleration exerted on the steering rack.
-    We rely on apply_override_angle_ramp to reach the max angle at low speeds.
-    At low speed lateral acceleration approaches infinity and it is not good proxy
-    for the torque to target angle conversion and needs to be limited
-
+    Convert driver torque to override target angle.
     """
     ## torque to position
     # ignore torque sensor offset and disturbances
@@ -225,13 +198,10 @@ class CoopSteeringCarController:
     angle_override = calc_override_angle_limited(steering_torque_with_deadzone, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
     return angle_override
 
-  def apply_override_angle_progressive(self, apply_angle_delta: float, driverTorque: float, vEgo: float,
-                                    VM: VehicleModel, scale: float = 1.0) -> float:
+  def apply_override_angle_progressive(self, angle_override_target: float, apply_angle_delta: float,
+                                    driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
-    Converts steering torque to steering rotation rate.
-    Physically angle rate is related to viscous damping of tires rotating on the ground.
-    Here, however, the angle rate target is obtained from lateral jerk limit
-    as a reasonable safe rate which decays quadratically with vehicle speed.
+    Move override_angle_accu toward angle_override_target subject to torque-based rate limits.
     """
     # torque biasing emulates the steering centering when released:
     if self.override_angle_accu > 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED:
@@ -242,17 +212,18 @@ class CoopSteeringCarController:
       # when override_angle_accu is reset this turns off  everything
       torque_biased = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
 
-    torque_biased *= scale
-
-    # determine steering rotation rate - switch to higher rate when centering
-    angle_override_delta = calc_override_angle_delta_limited(torque_biased, vEgo, VM,
-                          STEER_OVERRIDE_MAX_LAT_JERK if (torque_biased * self.override_angle_accu) > 0
-                          else STEER_OVERRIDE_MAX_LAT_JERK_CENTERING)
+    # determine how fast override_angle_accu is allowed to move toward the target
+    moving_away_from_zero = self.override_angle_accu * (angle_override_target - self.override_angle_accu) > 0
+    angle_override_delta_limit = calc_override_angle_delta_limit(
+      torque_biased,
+      STEER_OVERRIDE_DELTA_GAIN_LIMIT if moving_away_from_zero else STEER_OVERRIDE_DELTA_GAIN_LIMIT_CENTERING,
+    )
+    angle_override_delta = apply_bounds(angle_override_target - self.override_angle_accu, abs(angle_override_delta_limit))
 
     # subtract same-direction angle delta already applied upstream
-    if torque_biased * apply_angle_delta > 0:
+    if angle_override_delta * apply_angle_delta > 0:
       angle_override_delta = angle_override_delta - apply_bounds(apply_angle_delta, abs(angle_override_delta))
-    elif torque_biased * apply_angle_delta < 0:
+    elif angle_override_delta * apply_angle_delta < 0:
       opposing_consume_ratio = STEER_OVERRIDE_OPPOSING_DELTA_CONSUME_GAIN * max(0.0, abs(torque_biased) / STEER_OVERRIDE_TORQUE_RANGE)
       angle_override_delta = angle_override_delta - opposing_consume_ratio * apply_angle_delta
 
@@ -274,23 +245,12 @@ class CoopSteeringCarController:
 
   def apply_override_angle_combined(self, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
-    Vehicle-speed based transition between direct and progressive override control modes.
-    Fuzzes the two modes based on the capabilities of the direct control mode.
+    Apply a single-state steering override around the upstream apply_angle command.
     """
-    # calculate capability of direct angle override (fully active above ~53kph)
-    direct_override_capability = (calc_override_angle_limited(STEER_OVERRIDE_TORQUE_RANGE, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL) /
-                   get_steer_from_lat_accel(STEER_OVERRIDE_MAX_LAT_ACCEL, vEgo, VM))
-
-    # Direct override capability approaches 0 at standstill as desired lat accel approaches infinity.
-    # Allow more progressive override at when direct override capability drops.
-    progressive_control = 1.0 - direct_override_capability
-
-    apply_angle += self.apply_override_angle_direct(driverTorque, vEgo, VM)
-
-    apply_angle_delta = apply_angle - self.coop_apply_angle_with_direct_override_last
-    self.coop_apply_angle_with_direct_override_last = apply_angle
-    apply_angle += self.apply_override_angle_progressive(apply_angle_delta, driverTorque, vEgo, VM,
-                                                                 scale=progressive_control)
+    angle_override_target = self.apply_override_angle_direct(driverTorque, vEgo, VM)
+    apply_angle_delta = apply_angle - self.apply_angle_last
+    self.apply_angle_last = apply_angle
+    apply_angle += self.apply_override_angle_progressive(angle_override_target, apply_angle_delta, driverTorque, vEgo, VM)
 
     return apply_angle
 
