@@ -196,7 +196,6 @@ class SteerJerkLimiter:
 
 class CoopSteeringCarController:
   def __init__(self):
-    self.coop_apply_angle_last = 0
     self.coop_apply_angle_sat_last = 0
     self.coop_apply_angle_with_direct_override_last = 0
     self.override_angle_accu = 0
@@ -208,7 +207,6 @@ class CoopSteeringCarController:
 
   def reset_override_state(self, apply_angle: float) -> None:
     self.override_angle_accu = 0
-    self.coop_apply_angle_last = apply_angle
     self.coop_apply_angle_sat_last = apply_angle
     self.coop_apply_angle_with_direct_override_last = apply_angle
     self.override_accel_rate_limiter.reset(apply_angle)
@@ -348,10 +346,9 @@ class CoopSteeringCarController:
     apply_angle = self.apply_override_angle_combined(apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
 
     # final rate limit - matching panda safety
-    self.coop_apply_angle_last = apply_angle
     self.coop_apply_angle_sat_last = apply_steer_angle_limits_vm(apply_angle, self.coop_apply_angle_sat_last, CS.out.vEgoRaw,
                                                     CS.out.steeringAngleDeg, lat_active, CoopSteeringCarControllerParams, VM)
-    sat_error = self.coop_apply_angle_last - self.coop_apply_angle_sat_last
+    sat_error = apply_angle - self.coop_apply_angle_sat_last
     self.unwind_override_angle_progressive(sat_error)
 
     return CoopSteeringDataSP(self.coop_apply_angle_sat_last, lat_active)
