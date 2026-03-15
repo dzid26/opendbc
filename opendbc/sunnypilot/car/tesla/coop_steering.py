@@ -75,9 +75,9 @@ def calc_override_angle_limited(torque: float, vEgo: float, VM: VehicleModel, la
 
 def calc_override_angle_delta_limit(torque: float, gain_limit: float) -> float:
   """
-  Limit torque to angle delta conversion for stability and
+  Convert torque magnitude to a per-step steering angle delta limit.
   """
-  return apply_bounds(torque * gain_limit * DT_LAT_CTRL, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
+  return min(abs(torque) * gain_limit * DT_LAT_CTRL, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
 
 
 class SteerRateLimiter:
@@ -175,50 +175,56 @@ class CoopSteeringCarController:
   def __init__(self):
     self.apply_angle_last = 0
     self.coop_apply_angle_sat_last = 0
-    self.override_angle_accu = 0
+    self.angle_override = 0
     self.override_active_counter = 0  # Counter for how many cycles torque is below threshold
     self.resume_rate_limiter_delta = SteerRateLimiter()
     self.resume_rate_limiter = SteerRateLimiter()
     self.override_accel_rate_limiter = SteerJerkLimiter()
     self.debug_angle_desired_limited = 0
 
+  @property
+  def override_angle_accu(self) -> float:
+    return self.angle_override
+
+  @override_angle_accu.setter
+  def override_angle_accu(self, value: float) -> None:
+    self.angle_override = value
+
   def reset_override_state(self, apply_angle: float) -> None:
     self.apply_angle_last = apply_angle
-    self.override_angle_accu = 0
+    self.angle_override = 0
     self.coop_apply_angle_sat_last = apply_angle
     self.override_accel_rate_limiter.reset(apply_angle)
 
-  def apply_override_angle_direct(self, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+  def get_angle_override_target(self, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
     """
     Convert driver torque to override target angle.
     """
-    ## torque to position
-    # ignore torque sensor offset and disturbances
     steering_torque_with_deadzone = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
-    angle_override = calc_override_angle_limited(steering_torque_with_deadzone, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
-    return angle_override
+    return calc_override_angle_limited(steering_torque_with_deadzone, vEgo, VM, STEER_OVERRIDE_MAX_LAT_ACCEL)
 
-  def apply_override_angle_progressive(self, angle_override_target: float, apply_angle_delta: float,
-                                    driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
+  def update_override_angle_rate_limited(self, angle_override_target: float, apply_angle_delta: float,
+                                         driverTorque: float, vEgo: float) -> float:
     """
-    Move override_angle_accu toward angle_override_target subject to torque-based rate limits.
+    Update angle_override toward the driver torque target subject to torque-based rate limits.
     """
+    torque_deadzone = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
+
     # torque biasing emulates the steering centering when released:
-    if self.override_angle_accu > 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED:
-      torque_biased = driverTorque - STEER_OVERRIDE_MIN_TORQUE
-    elif self.override_angle_accu < 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED:
-      torque_biased = driverTorque + STEER_OVERRIDE_MIN_TORQUE
+    centering_active = self.angle_override != 0 and abs(vEgo) > STEER_OVERRIDE_CENTERING_MIN_SPEED
+    if centering_active:
+      torque_biased = driverTorque - np.sign(self.angle_override) * STEER_OVERRIDE_MIN_TORQUE
     else:
-      # when override_angle_accu is reset this turns off  everything
-      torque_biased = apply_deadzone(driverTorque, STEER_OVERRIDE_MIN_TORQUE)
+      torque_biased = torque_deadzone
 
-    # determine how fast override_angle_accu is allowed to move toward the target
-    moving_away_from_zero = self.override_angle_accu * (angle_override_target - self.override_angle_accu) > 0
-    angle_override_delta_limit = calc_override_angle_delta_limit(
-      torque_biased,
-      STEER_OVERRIDE_DELTA_GAIN_LIMIT if moving_away_from_zero else STEER_OVERRIDE_DELTA_GAIN_LIMIT_CENTERING,
-    )
-    angle_override_delta = apply_bounds(angle_override_target - self.override_angle_accu, abs(angle_override_delta_limit))
+    delta_limit_away = calc_override_angle_delta_limit(torque_deadzone, STEER_OVERRIDE_DELTA_GAIN_LIMIT)
+    delta_limit_center = calc_override_angle_delta_limit(torque_biased, STEER_OVERRIDE_DELTA_GAIN_LIMIT_CENTERING)
+
+    down_step = delta_limit_center if self.angle_override > 0 else delta_limit_away
+    up_step = delta_limit_center if self.angle_override < 0 else delta_limit_away
+
+    target_error = angle_override_target - self.angle_override
+    angle_override_delta = float(np.clip(target_error, -down_step, up_step))
 
     # subtract same-direction angle delta already applied upstream
     if angle_override_delta * apply_angle_delta > 0:
@@ -228,31 +234,15 @@ class CoopSteeringCarController:
       angle_override_delta = angle_override_delta - opposing_consume_ratio * apply_angle_delta
 
     # ramp the angle
-    new_override_angle_accu = self.override_angle_accu + angle_override_delta
-    # snap to 0 if sign changes and driver torque is steering centering zone
-    if (new_override_angle_accu * self.override_angle_accu) < 0 and abs(driverTorque) < STEER_OVERRIDE_MIN_TORQUE:
-      new_override_angle_accu = 0
+    self.angle_override += angle_override_delta
 
-    self.override_angle_accu = new_override_angle_accu
-
-    return self.override_angle_accu
+    return self.angle_override
 
   def unwind_override_angle_progressive(self, sat_error: float) -> None:
     """Apply same-frame anti-windup after the final steering angle limiter."""
-    if self.override_angle_accu * sat_error > 0:
-      sat_error = apply_bounds(sat_error, abs(self.override_angle_accu))
-      self.override_angle_accu -= sat_error
-
-  def apply_override_angle_combined(self, apply_angle: float, driverTorque: float, vEgo: float, VM: VehicleModel) -> float:
-    """
-    Apply a single-state steering override around the upstream apply_angle command.
-    """
-    angle_override_target = self.apply_override_angle_direct(driverTorque, vEgo, VM)
-    apply_angle_delta = apply_angle - self.apply_angle_last
-    self.apply_angle_last = apply_angle
-    apply_angle += self.apply_override_angle_progressive(angle_override_target, apply_angle_delta, driverTorque, vEgo, VM)
-
-    return apply_angle
+    if self.angle_override * sat_error > 0:
+      sat_error = apply_bounds(sat_error, abs(self.angle_override))
+      self.angle_override -= sat_error
 
   def overriding_steer_desired_accel_limit(self, apply_angle: float, vEgo: float, steeringTorque: float) -> float:
     """
@@ -303,7 +293,10 @@ class CoopSteeringCarController:
     # apply_angle = self.overriding_steer_desired_accel_limit(apply_angle, CS.out.vEgo, CS.out.steeringTorque)
     self.debug_angle_desired_limited = apply_angle #! debug
 
-    apply_angle = self.apply_override_angle_combined(apply_angle, CS.out.steeringTorque, CS.out.vEgo, VM)
+    apply_angle_delta = apply_angle - self.apply_angle_last
+    self.apply_angle_last = apply_angle
+    angle_override_target = self.get_angle_override_target(CS.out.steeringTorque, CS.out.vEgo, VM)
+    apply_angle += self.update_override_angle_rate_limited(angle_override_target, apply_angle_delta, CS.out.steeringTorque, CS.out.vEgo)
 
     # final rate limit - matching panda safety
     self.coop_apply_angle_sat_last = apply_steer_angle_limits_vm(apply_angle, self.coop_apply_angle_sat_last, CS.out.vEgoRaw,
