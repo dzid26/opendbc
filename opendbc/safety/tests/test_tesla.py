@@ -5,7 +5,7 @@ import numpy as np
 
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
 from opendbc.car.tesla.teslacan import get_steer_ctrl_type
-from opendbc.car.tesla.values import CarControllerParams, TeslaSafetyFlags, TeslaFlags, CANBUS
+from opendbc.car.tesla.values import CANBUS, CarControllerParams, STEER_DISENGAGE_THRESHOLD, TeslaSafetyFlags, TeslaFlags
 from opendbc.car.tesla.carcontroller import get_safety_CP
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
@@ -89,8 +89,10 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
       self.__class__.cnt_angle_cmd += 1
     return self.packer.make_can_msg_safety("DAS_steeringControl", bus, values)
 
-  def _angle_meas_msg(self, angle: float, hands_on_level: int = 0, eac_status: int = 1, eac_error_code: int = 0):
+  def _angle_meas_msg(self, angle: float, hands_on_level: int = 0, eac_status: int = 1, eac_error_code: int = 0,
+                      torsion_bar_torque: float = 0.0):
     values = {"EPAS3S_internalSAS": angle, "EPAS3S_handsOnLevel": hands_on_level,
+              "EPAS3S_torsionBarTorque": torsion_bar_torque,
               "EPAS3S_eacStatus": eac_status, "EPAS3S_eacErrorCode": eac_error_code,
               "EPAS3S_sysStatusCounter": self.cnt_epas % 16}
     self.__class__.cnt_epas += 1
@@ -116,8 +118,8 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
     return self.packer.make_can_msg_safety("ESP_B", 0, values)
 
   def _user_gas_msg(self, gas):
-    values = {"DI_accelPedalPos": gas}
-    return self.packer.make_can_msg_safety("DI_systemStatus", 0, values)
+    values = {"DI_accelPedalPressed": gas > 0}
+    return self.packer.make_can_msg_safety("DI_speed", 0, values)
 
   def _pcm_status_msg(self, enable, autopark_state=0):
     values = {
@@ -232,6 +234,24 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
           self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
           self.assertFalse(self.safety.get_steering_disengage_prev())
 
+  def test_steering_wheel_torque_disengage(self):
+    for torsion_bar_torque, should_disengage in (
+      (-STEER_DISENGAGE_THRESHOLD - 0.01, True),
+      (-STEER_DISENGAGE_THRESHOLD, False),
+      (STEER_DISENGAGE_THRESHOLD, False),
+      (STEER_DISENGAGE_THRESHOLD + 0.01, True),
+    ):
+      self.safety.set_controls_allowed(True)
+
+      self.assertTrue(self._rx(self._angle_meas_msg(0, torsion_bar_torque=torsion_bar_torque)))
+      self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
+      self.assertEqual(should_disengage, self.safety.get_steering_disengage_prev())
+
+      # Should not recover
+      self.assertTrue(self._rx(self._angle_meas_msg(0)))
+      self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
+      self.assertFalse(self.safety.get_steering_disengage_prev())
+
   def test_autopark_summon_while_enabled(self):
     # We should not respect Autopark that activates while controls are allowed
     self._rx(self._pcm_status_msg(True, 0))
@@ -276,14 +296,13 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
     self.safety.set_controls_allowed(True)
     for steer_control_type in range(4):
       should_tx = steer_control_type in (self.steer_control_types["NONE"],
-                                         self.steer_control_types["ANGLE_CONTROL"],
-                                         self.steer_control_types["LANE_KEEP_ASSIST"])
+                                         self.steer_control_types["ANGLE_CONTROL"])
       self.assertEqual(should_tx, self._tx(self._angle_cmd_msg(0, state=steer_control_type)))
 
   def test_stock_lkas_passthrough(self):
     # TODO: make these generic passthrough tests
     no_lkas_msg = self._angle_cmd_msg(0, state=False)
-    no_lkas_msg_cam = self._angle_cmd_msg(0, state=True, bus=2)
+    no_lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['NONE'], bus=2)
     lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['LANE_KEEP_ASSIST'], bus=2)
 
     # stock system sends no LKAS -> no forwarding, and OP is allowed to TX
