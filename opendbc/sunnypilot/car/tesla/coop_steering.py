@@ -29,6 +29,7 @@ STEER_OVERRIDE_MIN_TORQUE = 0.5 # Nm - based on typical steering bias + noise
 STEER_OVERRIDE_MAX_TORQUE = 2.5 # Nm max torque before EPS disengages
 
 STEER_OVERRIDE_MAX_LAT_ACCEL = 2.0 # m/s^2 - determines angle rate - speed dependent - similar to Tesla comfort steering mode
+STEER_OVERRIDE_TARGET_ANGLE_MAX = 2 * CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX  # deg
 
 # angle ramping
 STEER_OVERRIDE_CENTERING_MIN_SPEED = 0.1  # m/s, avoid springing back at standstill
@@ -70,14 +71,15 @@ def calc_override_angle_limited(torque: float, vEgo: float, VM: VehicleModel, la
 
   # lateral accel is linear in respect to angle so it's fine to interpolate it with torque
   torque_to_angle = get_steer_from_lat_accel(lat_accel, vEgo, VM) / STEER_OVERRIDE_TORQUE_RANGE
-  return torque * torque_to_angle
+  return torque * min(torque_to_angle, STEER_OVERRIDE_TARGET_ANGLE_MAX / STEER_OVERRIDE_TORQUE_RANGE)
 
 
 def calc_override_angle_delta_limit(torque: float, gain_limit: float) -> float:
   """
   Convert torque magnitude to a per-step steering angle delta limit.
   """
-  return min(abs(torque) * gain_limit * DT_LAT_CTRL, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE)
+  gain_limit = min(gain_limit, CoopSteeringCarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE / DT_LAT_CTRL / STEER_OVERRIDE_TORQUE_RANGE)
+  return abs(torque) * gain_limit * DT_LAT_CTRL
 
 
 class SteerRateLimiter:
