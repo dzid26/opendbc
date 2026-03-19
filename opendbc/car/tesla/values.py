@@ -81,6 +81,9 @@ FW_QUERY_CONFIG = FwQueryConfig(
 
 # Cars with this EPS FW have FSD 14 and use TeslaFlags.FSD_14
 FSD_14_FW = {
+  CAR.TESLA_MODEL_3: [
+    b'TeMYG4_Main_0.0.0 (77),E4HP015.04.5',
+  ],
   CAR.TESLA_MODEL_Y: [
     b'TeMYG4_Legacy3Y_0.0.0 (6),Y4003.04.0',
     b'TeMYG4_Main_0.0.0 (77),Y4003.05.4',
@@ -130,6 +133,7 @@ class CarControllerParams:
   ACCEL_MIN = -3.48  # m/s^2
   JERK_LIMIT_MAX = 4.9  # m/s^3, ACC faults at 5.0
   JERK_LIMIT_MIN = -4.9  # m/s^3, ACC faults at 5.0
+  JERK_RATE_UP = 16.0  # m/s^3 per second ramp rate (fixes gas override issue)
 
 
 class TeslaSafetyFlags(IntFlag):
@@ -146,3 +150,4 @@ class TeslaFlags(IntFlag):
 DBC = CAR.create_dbc_map()
 
 STEER_THRESHOLD = 1
+STEER_DISENGAGE_THRESHOLD = 5.0
