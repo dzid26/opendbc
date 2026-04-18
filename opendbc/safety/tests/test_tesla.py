@@ -498,13 +498,47 @@ class TestTeslaVehicleBusSafety(TestTeslaSafetyBase):
     super().setUp()
     self.safety = libsafety_py.libsafety
     self.packer_adas = CANPackerSafety("tesla_model3_vehicle")
-    self.safety.set_current_safety_param_sp(TeslaSafetyFlagsSP.HAS_VEHICLE_BUS)
+    self.safety.set_current_safety_param_sp(TeslaSafetyFlagsSP.HAS_VEHICLE_BUS | TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER)
     self.safety.set_safety_hooks(CarParams.SafetyModel.tesla, 0)
     self.safety.init_tests()
 
   def _lkas_button_msg(self, enabled):
     values = {"UI_activeTouchPoints": 3 if enabled else 0}
     return self.packer_adas.make_can_msg_safety("UI_status2", CANBUS.vehicle, values)
+
+  def _set_mads_screen_button_config(self, finger_flag):
+    param_sp = TeslaSafetyFlagsSP.HAS_VEHICLE_BUS
+    if finger_flag is not None:
+      param_sp |= finger_flag
+    self.safety.set_current_safety_param_sp(param_sp)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.tesla, 0)
+    self.safety.init_tests()
+
+  def _touch_points_msg(self, touch_points):
+    return self.packer_adas.make_can_msg_safety("UI_status2", CANBUS.vehicle, {"UI_activeTouchPoints": touch_points})
+
+  def test_mads_screen_button_finger_count_match(self):
+    """Configured finger count must match received touch-point count to register a MADS button press."""
+    configs = [
+      (TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER, 3),
+      (TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_4_FINGER, 4),
+      (TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_5_FINGER, 5),
+    ]
+    for config_flag, config_count in configs:
+      for actual in (0, 3, 4, 5):
+        with self.subTest(configured=config_count, actual=actual):
+          self._set_mads_screen_button_config(config_flag)
+          self._rx(self._touch_points_msg(actual))
+          expected = 1 if actual == config_count else 0  # PRESSED vs NOT_PRESSED
+          self.assertEqual(expected, self.safety.get_mads_button_press())
+
+  def test_mads_screen_button_disabled(self):
+    """With no finger-count flag set, touch messages must not change the MADS button state from UNAVAILABLE."""
+    self._set_mads_screen_button_config(None)
+    for actual in (0, 3, 4, 5):
+      with self.subTest(actual=actual):
+        self._rx(self._touch_points_msg(actual))
+        self.assertEqual(-1, self.safety.get_mads_button_press())  # UNAVAILABLE
 
 
 if __name__ == "__main__":
