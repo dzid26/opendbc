@@ -52,7 +52,7 @@ class CarState(CarStateBase):
       ret.vEgoCluster = cp_party.vl["DI_speed"]["DI_uiSpeed"] * CV.MPH_TO_MS
 
     # Gas pedal
-    ret.gasPressed = cp_party.vl["DI_systemStatus"]["DI_accelPedalPos"] > 0
+    ret.gasPressed = cp_party.vl["DI_speed"]["DI_accelPedalPressed"] == 1
 
     # Brake pedal
     ret.brake = 0
