@@ -264,12 +264,12 @@ class CoopSteeringCarController:
       )
     return self.override_accel_rate_limiter.update(apply_angle, DT_LAT_CTRL, max_angle_rate, max_angle_accel, 100_000.0) #, snap = False)
 
-  def resume_steer_desired_rate_limit(self, lat_active: bool, apply_angle: float, steering_rate_deg: float) -> float:
+  def resume_steer_desired_rate_limit(self, lat_active: bool, apply_angle: float) -> float:
     """Limits steering wheel acceleration when resuming steering"""
     if not lat_active:
       # reset and bypass
       self.resume_rate_limiter_delta.reset(0)
-      self.resume_rate_limiter.reset(apply_angle + steering_rate_deg * DT_LAT_CTRL)
+      self.resume_rate_limiter.reset(apply_angle)
       return apply_angle
 
     angle_rate_delta_lim = self.resume_rate_limiter_delta.update(CarControllerParams.ANGLE_LIMITS.MAX_ANGLE_RATE,
@@ -281,7 +281,7 @@ class CoopSteeringCarController:
     angle_coop_enabled = CP_SP.flags & TeslaFlagsSP.COOP_STEERING.value
 
     # avoid sudden rotation on engagement
-    apply_angle = self.resume_steer_desired_rate_limit(lat_active, apply_angle, CS.out.steeringRateDeg)
+    apply_angle = self.resume_steer_desired_rate_limit(lat_active, apply_angle)
 
     if not lat_active or not angle_coop_enabled:
       self.reset_override_state(apply_angle)
