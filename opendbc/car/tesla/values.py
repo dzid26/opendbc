@@ -79,21 +79,6 @@ FW_QUERY_CONFIG = FwQueryConfig(
   ]
 )
 
-# Cars with this EPS FW have FSD 14 and use TeslaFlags.FSD_14
-FSD_14_FW = {
-  CAR.TESLA_MODEL_3: [
-    b'TeMYG4_Main_0.0.0 (77),E4HP015.04.5',
-    b'TeMYG4_Main_0.0.0 (78),E4HP015.05.0',
-    b'TeMYG4_Main_0.0.0 (77),E4H015.04.5',
-    b'TeMYG4_Main_0.0.0 (78),E4H015.05.0',
-  ],
-  CAR.TESLA_MODEL_Y: [
-    b'TeMYG4_Legacy3Y_0.0.0 (6),Y4003.04.0',
-    b'TeMYG4_Main_0.0.0 (77),Y4003.05.4',
-    b'TeMYG4_Main_0.0.0 (78),Y4003.06.0',
-  ]
-}
-
 
 class CANBUS:
   party = 0
@@ -142,12 +127,10 @@ class CarControllerParams:
 
 class TeslaSafetyFlags(IntFlag):
   LONG_CONTROL = 1
-  FSD_14 = 2
 
 
 class TeslaFlags(IntFlag):
   LONG_CONTROL = 1
-  FSD_14 = 2
   MISSING_DAS_SETTINGS = 4
 
 
