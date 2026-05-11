@@ -25,7 +25,7 @@ class TeslaCAN:
     values = {
       "DAS_steeringAngleRequest": -angle,
       "DAS_steeringHapticRequest": 0,
-      "DAS_steeringControlType": get_steer_ctrl_type(self.CP.flags, 1 if enabled else 0),
+      "DAS_steeringControlType": 1 if enabled else 0,
     }
 
     return self.packer.make_can_msg("DAS_steeringControl", CANBUS.party, values)
