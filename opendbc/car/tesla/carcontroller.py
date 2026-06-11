@@ -35,7 +35,7 @@ class CarController(CarControllerBase):
     # Wait until the override condition clears before steering
     # Canceling is done on rising edge of CS.out.steeringDisengage and is handled generically with CC.cruiseControl.cancel
     # Tesla angle signals are filtered - block engagement on high rate to avoid commanding a lagging value on entry.
-    self.lat_active = (CC.latActive and not CS.out.steeringDisengage
+    self.lat_active = (CC.latActive and not CS.steeringDisengage
                        and (self.lat_active or abs(CS.out.steeringRateDeg) < 40.0))
 
     if self.frame % 2 == 0:
