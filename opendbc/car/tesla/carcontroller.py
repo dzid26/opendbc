@@ -33,7 +33,7 @@ class CarController(CarControllerBase):
 
     # Wait until the override condition clears before steering
     # Canceling is done on rising edge of CS.out.steeringDisengage and is handled generically with CC.cruiseControl.cancel
-    lat_active = CC.latActive and not CS.steeringDisengage
+    lat_active = CC.latActive and not CS.out.steeringDisengage
 
     if self.frame % 2 == 0:
       # Angular rate limit based on speed
