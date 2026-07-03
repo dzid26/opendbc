@@ -30,7 +30,6 @@ class CarState(CarStateBase, CarStateExt):
     self.hands_on_level = 0
     self.prev_acc_state = 0
     self.das_control = None
-    self.steeringDisengage = False
 
   def update_summon_state(self, summon_state: str, cruise_enabled: bool):
     summon_now = summon_state in ("ACTIVE", "COMPLETE", "SELFPARK_STARTED")
@@ -85,7 +84,7 @@ class CarState(CarStateBase, CarStateExt):
     eac_error_code = self.can_define.dv["EPAS3S_sysStatus"]["EPAS3S_eacErrorCode"].get(int(epas_status["EPAS3S_eacErrorCode"]), None)
     eps_disengages = self.hands_on_level >= 3 or (eac_status == "EAC_INHIBITED" and
                                                          eac_error_code == "EAC_ERROR_HIGH_ANGLE_RATE_SAFETY")
-    self.steeringDisengage = eps_disengages or abs(ret.steeringTorque) > STEER_DISENGAGE_THRESHOLD
+    ret.steeringDisengage = eps_disengages or abs(ret.steeringTorque) > STEER_DISENGAGE_THRESHOLD
 
     # Cruise state
     cruise_state = self.can_define.dv["DI_state"]["DI_cruiseState"].get(int(cp_party.vl["DI_state"]["DI_cruiseState"]), None)
