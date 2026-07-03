@@ -467,26 +467,76 @@ class TestTeslaIgnition(unittest.TestCase):
     self.safety.init_tests()
     self.packer = CANPackerSafety("tesla_model3_party")
 
-  def _msg(self, counter, state):
-    return self.packer.make_can_msg_safety("VCFRONT_LVPowerState", 0,
-                                           {"VCFRONT_LVPowerStateCounter": counter,
-                                            "VCFRONT_vehiclePowerState": state})
+  def _gear_msg(self, counter, gear):
+    return self.packer.make_can_msg_safety("DI_systemStatus", 0,
+                                           {"DI_systemStatusCounter": counter,
+                                            "DI_gear": gear})
 
-  # VEHICLE_POWER_STATE_DRIVE=3 (counter-gated)
-  def test_ignition_on(self):
+  def _ui_msg(self, counter, buckled, door_open):
+    return self.packer.make_can_msg_safety("UI_warning", 0,
+                                           {"UI_warningCounter": counter,
+                                            "buckleStatus": 1 if buckled else 0,
+                                            "anyDoorOpen": 1 if door_open else 0})
+
+  # DI_gear=4 (D) -> ignition on (counter-gated)
+  def test_ignition_on_drive(self):
     for i in range(16):
       self.safety.init_tests()
-      self.safety.ignition_can_hook(self._msg(i, 3))
+      self.safety.ignition_can_hook(self._gear_msg(i, 4))
       self.assertFalse(self.safety.get_ignition_can())
-      self.safety.ignition_can_hook(self._msg((i + 1) % 16, 3))
+      self.safety.ignition_can_hook(self._gear_msg((i + 1) % 16, 4))
       self.assertTrue(self.safety.get_ignition_can())
 
-  def test_ignition_off(self):
-    self.safety.ignition_can_hook(self._msg(0, 3))
-    self.safety.ignition_can_hook(self._msg(1, 3))
+  def test_ignition_on_reverse(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 2))
+    self.assertFalse(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._gear_msg(1, 2))
     self.assertTrue(self.safety.get_ignition_can())
-    self.safety.ignition_can_hook(self._msg(2, 2))
-    self.safety.ignition_can_hook(self._msg(3, 2))
+
+  def test_ignition_on_neutral(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 3))
+    self.assertFalse(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._gear_msg(1, 3))
+    self.assertTrue(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_seatbelt_latched_door_closed(self):
+    self.safety.ignition_can_hook(self._ui_msg(0, True, False))
+    self.safety.ignition_can_hook(self._ui_msg(1, True, False))
+    self.safety.ignition_can_hook(self._gear_msg(2, 4))
+    self.safety.ignition_can_hook(self._gear_msg(3, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
+    self.assertTrue(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_unlatched(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 4))
+    self.safety.ignition_can_hook(self._gear_msg(1, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._ui_msg(2, False, False))
+    self.safety.ignition_can_hook(self._ui_msg(3, False, False))
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
+    self.assertFalse(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_door_open(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 4))
+    self.safety.ignition_can_hook(self._gear_msg(1, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._ui_msg(2, True, True))
+    self.safety.ignition_can_hook(self._ui_msg(3, True, True))
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
+    self.assertFalse(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_door_open_unlatched(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 4))
+    self.safety.ignition_can_hook(self._gear_msg(1, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._ui_msg(2, False, True))
+    self.safety.ignition_can_hook(self._ui_msg(3, False, True))
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
     self.assertFalse(self.safety.get_ignition_can())
 
 
