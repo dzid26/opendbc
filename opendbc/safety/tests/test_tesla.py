@@ -5,7 +5,7 @@ import numpy as np
 
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
 from opendbc.car.tesla.teslacan import get_steer_ctrl_type
-from opendbc.car.tesla.values import CarControllerParams, TeslaSafetyFlags, TeslaFlags, CANBUS
+from opendbc.car.tesla.values import CANBUS, CarControllerParams, STEER_DISENGAGE_THRESHOLD, TeslaSafetyFlags, TeslaFlags
 from opendbc.car.tesla.carcontroller import get_safety_CP
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
@@ -89,8 +89,10 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
       self.__class__.cnt_angle_cmd += 1
     return self.packer.make_can_msg_safety("DAS_steeringControl", bus, values)
 
-  def _angle_meas_msg(self, angle: float, hands_on_level: int = 0, eac_status: int = 1, eac_error_code: int = 0):
+  def _angle_meas_msg(self, angle: float, hands_on_level: int = 0, eac_status: int = 1, eac_error_code: int = 0,
+                      torsion_bar_torque: float = 0.0):
     values = {"EPAS3S_internalSAS": angle, "EPAS3S_handsOnLevel": hands_on_level,
+              "EPAS3S_torsionBarTorque": torsion_bar_torque,
               "EPAS3S_eacStatus": eac_status, "EPAS3S_eacErrorCode": eac_error_code,
               "EPAS3S_sysStatusCounter": self.cnt_epas % 16}
     self.__class__.cnt_epas += 1
@@ -116,8 +118,8 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
     return self.packer.make_can_msg_safety("ESP_B", 0, values)
 
   def _user_gas_msg(self, gas):
-    values = {"DI_accelPedalPos": gas}
-    return self.packer.make_can_msg_safety("DI_systemStatus", 0, values)
+    values = {"DI_accelPedalPressed": gas > 0}
+    return self.packer.make_can_msg_safety("DI_speed", 0, values)
 
   def _pcm_status_msg(self, enable, autopark_state=0):
     values = {
@@ -232,6 +234,24 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
           self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
           self.assertFalse(self.safety.get_steering_disengage_prev())
 
+  def test_steering_wheel_torque_disengage(self):
+    for torsion_bar_torque, should_disengage in (
+      (-STEER_DISENGAGE_THRESHOLD - 0.01, True),
+      (-STEER_DISENGAGE_THRESHOLD, False),
+      (STEER_DISENGAGE_THRESHOLD, False),
+      (STEER_DISENGAGE_THRESHOLD + 0.01, True),
+    ):
+      self.safety.set_controls_allowed(True)
+
+      self.assertTrue(self._rx(self._angle_meas_msg(0, torsion_bar_torque=torsion_bar_torque)))
+      self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
+      self.assertEqual(should_disengage, self.safety.get_steering_disengage_prev())
+
+      # Should not recover
+      self.assertTrue(self._rx(self._angle_meas_msg(0)))
+      self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
+      self.assertFalse(self.safety.get_steering_disengage_prev())
+
   def test_autopark_summon_while_enabled(self):
     # We should not respect Autopark that activates while controls are allowed
     self._rx(self._pcm_status_msg(True, 0))
@@ -276,14 +296,13 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
     self.safety.set_controls_allowed(True)
     for steer_control_type in range(4):
       should_tx = steer_control_type in (self.steer_control_types["NONE"],
-                                         self.steer_control_types["ANGLE_CONTROL"],
-                                         self.steer_control_types["LANE_KEEP_ASSIST"])
+                                         self.steer_control_types["ANGLE_CONTROL"])
       self.assertEqual(should_tx, self._tx(self._angle_cmd_msg(0, state=steer_control_type)))
 
   def test_stock_lkas_passthrough(self):
     # TODO: make these generic passthrough tests
     no_lkas_msg = self._angle_cmd_msg(0, state=False)
-    no_lkas_msg_cam = self._angle_cmd_msg(0, state=True, bus=2)
+    no_lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['NONE'], bus=2)
     lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['LANE_KEEP_ASSIST'], bus=2)
 
     # stock system sends no LKAS -> no forwarding, and OP is allowed to TX
@@ -467,26 +486,76 @@ class TestTeslaIgnition(unittest.TestCase):
     self.safety.init_tests()
     self.packer = CANPackerSafety("tesla_model3_party")
 
-  def _msg(self, counter, state):
-    return self.packer.make_can_msg_safety("VCFRONT_LVPowerState", 0,
-                                           {"VCFRONT_LVPowerStateCounter": counter,
-                                            "VCFRONT_vehiclePowerState": state})
+  def _gear_msg(self, counter, gear):
+    return self.packer.make_can_msg_safety("DI_systemStatus", 0,
+                                           {"DI_systemStatusCounter": counter,
+                                            "DI_gear": gear})
 
-  # VEHICLE_POWER_STATE_DRIVE=3 (counter-gated)
-  def test_ignition_on(self):
+  def _ui_msg(self, counter, buckled, door_open):
+    return self.packer.make_can_msg_safety("UI_warning", 0,
+                                           {"UI_warningCounter": counter,
+                                            "buckleStatus": 1 if buckled else 0,
+                                            "anyDoorOpen": 1 if door_open else 0})
+
+  # DI_gear=4 (D) -> ignition on (counter-gated)
+  def test_ignition_on_drive(self):
     for i in range(16):
       self.safety.init_tests()
-      self.safety.ignition_can_hook(self._msg(i, 3))
+      self.safety.ignition_can_hook(self._gear_msg(i, 4))
       self.assertFalse(self.safety.get_ignition_can())
-      self.safety.ignition_can_hook(self._msg((i + 1) % 16, 3))
+      self.safety.ignition_can_hook(self._gear_msg((i + 1) % 16, 4))
       self.assertTrue(self.safety.get_ignition_can())
 
-  def test_ignition_off(self):
-    self.safety.ignition_can_hook(self._msg(0, 3))
-    self.safety.ignition_can_hook(self._msg(1, 3))
+  def test_ignition_on_reverse(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 2))
+    self.assertFalse(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._gear_msg(1, 2))
     self.assertTrue(self.safety.get_ignition_can())
-    self.safety.ignition_can_hook(self._msg(2, 2))
-    self.safety.ignition_can_hook(self._msg(3, 2))
+
+  def test_ignition_on_neutral(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 3))
+    self.assertFalse(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._gear_msg(1, 3))
+    self.assertTrue(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_seatbelt_latched_door_closed(self):
+    self.safety.ignition_can_hook(self._ui_msg(0, True, False))
+    self.safety.ignition_can_hook(self._ui_msg(1, True, False))
+    self.safety.ignition_can_hook(self._gear_msg(2, 4))
+    self.safety.ignition_can_hook(self._gear_msg(3, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
+    self.assertTrue(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_unlatched(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 4))
+    self.safety.ignition_can_hook(self._gear_msg(1, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._ui_msg(2, False, False))
+    self.safety.ignition_can_hook(self._ui_msg(3, False, False))
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
+    self.assertFalse(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_door_open(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 4))
+    self.safety.ignition_can_hook(self._gear_msg(1, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._ui_msg(2, True, True))
+    self.safety.ignition_can_hook(self._ui_msg(3, True, True))
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
+    self.assertFalse(self.safety.get_ignition_can())
+
+  def test_ignition_off_park_door_open_unlatched(self):
+    self.safety.ignition_can_hook(self._gear_msg(0, 4))
+    self.safety.ignition_can_hook(self._gear_msg(1, 4))
+    self.assertTrue(self.safety.get_ignition_can())
+    self.safety.ignition_can_hook(self._ui_msg(2, False, True))
+    self.safety.ignition_can_hook(self._ui_msg(3, False, True))
+    self.safety.ignition_can_hook(self._gear_msg(4, 1))
+    self.safety.ignition_can_hook(self._gear_msg(5, 1))
     self.assertFalse(self.safety.get_ignition_can())
 
 
@@ -498,13 +567,47 @@ class TestTeslaVehicleBusSafety(TestTeslaSafetyBase):
     super().setUp()
     self.safety = libsafety_py.libsafety
     self.packer_adas = CANPackerSafety("tesla_model3_vehicle")
-    self.safety.set_current_safety_param_sp(TeslaSafetyFlagsSP.HAS_VEHICLE_BUS)
+    self.safety.set_current_safety_param_sp(TeslaSafetyFlagsSP.HAS_VEHICLE_BUS | TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER)
     self.safety.set_safety_hooks(CarParams.SafetyModel.tesla, 0)
     self.safety.init_tests()
 
   def _lkas_button_msg(self, enabled):
     values = {"UI_activeTouchPoints": 3 if enabled else 0}
     return self.packer_adas.make_can_msg_safety("UI_status2", CANBUS.vehicle, values)
+
+  def _set_mads_screen_button_config(self, finger_flag):
+    param_sp = TeslaSafetyFlagsSP.HAS_VEHICLE_BUS
+    if finger_flag is not None:
+      param_sp |= finger_flag
+    self.safety.set_current_safety_param_sp(param_sp)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.tesla, 0)
+    self.safety.init_tests()
+
+  def _touch_points_msg(self, touch_points):
+    return self.packer_adas.make_can_msg_safety("UI_status2", CANBUS.vehicle, {"UI_activeTouchPoints": touch_points})
+
+  def test_mads_screen_button_finger_count_match(self):
+    """Configured finger count must match received touch-point count to register a MADS button press."""
+    configs = [
+      (TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER, 3),
+      (TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_4_FINGER, 4),
+      (TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_5_FINGER, 5),
+    ]
+    for config_flag, config_count in configs:
+      for actual in (0, 3, 4, 5):
+        with self.subTest(configured=config_count, actual=actual):
+          self._set_mads_screen_button_config(config_flag)
+          self._rx(self._touch_points_msg(actual))
+          expected = 1 if actual == config_count else 0  # PRESSED vs NOT_PRESSED
+          self.assertEqual(expected, self.safety.get_mads_button_press())
+
+  def test_mads_screen_button_disabled(self):
+    """With no finger-count flag set, touch messages must not change the MADS button state from UNAVAILABLE."""
+    self._set_mads_screen_button_config(None)
+    for actual in (0, 3, 4, 5):
+      with self.subTest(actual=actual):
+        self._rx(self._touch_points_msg(actual))
+        self.assertEqual(-1, self.safety.get_mads_button_press())  # UNAVAILABLE
 
 
 if __name__ == "__main__":

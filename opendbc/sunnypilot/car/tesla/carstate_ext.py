@@ -20,19 +20,29 @@ class CarStateExt:
     self.CP = CP
     self.CP_SP = CP_SP
 
-    self.infotainment_3_finger_press = 0
+    self.active_touch_points = 0
 
   def update(self, ret: structs.CarState, ret_sp: structs.CarStateSP, can_parsers: dict[StrEnum, CANParser]) -> None:
     if self.CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS:
       cp_adas = can_parsers[Bus.adas]
 
-      prev_infotainment_3_finger_press = self.infotainment_3_finger_press
-      self.infotainment_3_finger_press = int(cp_adas.vl["UI_status2"]["UI_activeTouchPoints"])
+      prev_active_touch_points = self.active_touch_points
+      self.active_touch_points = int(cp_adas.vl["UI_status2"]["UI_activeTouchPoints"])
 
-      ret.buttonEvents = [*create_button_events(self.infotainment_3_finger_press, prev_infotainment_3_finger_press,
-                                                {3: ButtonType.lkas})]
+      finger_count = None
+      if self.CP_SP.flags & TeslaFlagsSP.MADS_SCREEN_BUTTON_3_FINGER:
+        finger_count = 3
+      elif self.CP_SP.flags & TeslaFlagsSP.MADS_SCREEN_BUTTON_4_FINGER:
+        finger_count = 4
+      elif self.CP_SP.flags & TeslaFlagsSP.MADS_SCREEN_BUTTON_5_FINGER:
+        finger_count = 5
+
+      if finger_count is not None:
+        ret.buttonEvents = [*create_button_events(self.active_touch_points, prev_active_touch_points,
+                                                {finger_count: ButtonType.lkas})]
 
     cp_party = can_parsers[Bus.party]
+
     cp_ap_party = can_parsers[Bus.ap_party]
 
     speed_units = self.can_define.dv["DI_state"]["DI_speedUnits"].get(int(cp_party.vl["DI_state"]["DI_speedUnits"]), None)
