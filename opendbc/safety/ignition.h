@@ -7,10 +7,15 @@
 
 bool ignition_can = false;
 uint32_t ignition_can_cnt = 0U;
+bool wake_on_can = false;
+uint32_t wake_on_can_cnt = 0U;
 
 void ignition_can_hook(const CANPacket_t *msg) {
   if (msg->bus == 0U) {
     int len = GET_LEN(msg);
+    static int tesla_gear = -1;
+    static bool tesla_seatbelt_latched = false;
+    static bool tesla_door_open = false;
 
     // GM exception
     if ((msg->addr == 0x1F1U) && (len == 8)) {
@@ -33,7 +38,7 @@ void ignition_can_hook(const CANPacket_t *msg) {
       prev_counter_rivian = counter;
     }
 
-    // Tesla Model 3/Y exception
+    // Tesla Model 3/Y exception - wake while LV power state is active
     if ((msg->addr == 0x221U) && (len == 8)) {
       // 0x221 overlaps with Rivian which has random data on byte 0
       int counter = msg->data[6] >> 4;
@@ -42,10 +47,39 @@ void ignition_can_hook(const CANPacket_t *msg) {
       if ((counter == ((prev_counter_tesla + 1) % 16)) && (prev_counter_tesla != -1)) {
         // VCFRONT_LVPowerState->VCFRONT_vehiclePowerState
         int power_state = (msg->data[0] >> 5U) & 0x3U;
-        ignition_can = power_state == 0x3;  // VEHICLE_POWER_STATE_DRIVE=3
-        ignition_can_cnt = 0U;
+        wake_on_can = power_state != 0x0; // not VEHICLE_POWER_STATE_OFF
+        wake_on_can_cnt = 0U;
       }
       prev_counter_tesla = counter;
+    }
+
+    // Tesla Model 3/Y exception - drive gears -> ignition
+    if ((msg->addr == 0x118U) && (len == 8)) {
+      int counter = msg->data[1] & 0x0FU;
+
+      static int prev_counter_tesla_gear = -1;
+      if ((counter == ((prev_counter_tesla_gear + 1) % 16)) && (prev_counter_tesla_gear != -1)) {
+        tesla_gear = (msg->data[2] >> 5) & 0x7;
+        if ((tesla_gear == 2) || (tesla_gear == 3) || (tesla_gear == 4)) {
+          ignition_can = true;
+        }
+        if ((tesla_gear == 1) && (!tesla_seatbelt_latched || tesla_door_open)) {
+          ignition_can = false;
+        }
+        ignition_can_cnt = 0U;
+      }
+      prev_counter_tesla_gear = counter;
+    }
+
+    if ((msg->addr == 0x311U) && (len == 7)) {
+      int counter = msg->data[1] & 0x0FU;
+
+      static int prev_counter_tesla_ui = -1;
+      if ((counter == ((prev_counter_tesla_ui + 1) % 16)) && (prev_counter_tesla_ui != -1)) {
+        tesla_seatbelt_latched = ((msg->data[1] >> 5U) & 0x1U) != 0U;  // UI_warning->buckleStatus
+        tesla_door_open = ((msg->data[3] >> 4U) & 0x1U) != 0U;  // UI_warning->anyDoorOpen
+      }
+      prev_counter_tesla_ui = counter;
     }
 
     // Mazda exception

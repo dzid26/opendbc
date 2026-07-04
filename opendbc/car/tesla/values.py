@@ -124,6 +124,7 @@ class CarControllerParams:
   ACCEL_MIN = -3.48  # m/s^2
   JERK_LIMIT_MAX = 4.9  # m/s^3, ACC faults at 5.0
   JERK_LIMIT_MIN = -4.9  # m/s^3, ACC faults at 5.0
+  JERK_RATE_UP = 1.0  # m/s^3 per second ramp rate (fixes gas override issue)
 
 
 class TeslaSafetyFlags(IntFlag):
@@ -140,3 +141,4 @@ class TeslaFlags(IntFlag):
 DBC = CAR.create_dbc_map()
 
 STEER_THRESHOLD = 1
+STEER_DISENGAGE_THRESHOLD = 5.0
