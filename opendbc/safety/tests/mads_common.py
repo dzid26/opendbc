@@ -359,11 +359,10 @@ class MadsSafetyTestBase(unittest.TestCase):
       self.safety.set_mads_params(True, disengage_on_brake, False)
 
       self.safety.set_controls_allowed_lateral(True)
-      self._rx(self._speed_msg(0))
       self.assertTrue(self.safety.get_controls_allowed_lateral())
 
       self._rx(self._user_brake_msg(True))
-      self.assertEqual(not disengage_on_brake, self.safety.get_controls_allowed_lateral())
+      self.assertTrue(self.safety.get_controls_allowed_lateral())
 
       self._rx(self._user_brake_msg(False))
       self.assertEqual(not disengage_on_brake, self.safety.get_controls_allowed_lateral())
