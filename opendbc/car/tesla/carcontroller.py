@@ -21,6 +21,7 @@ class CarController(CarControllerBase):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
     self.coop_steer = CoopSteeringCarController()
     self.apply_angle_last = 0
+    self.lat_active = False
     self.packer = CANPacker(dbc_names[Bus.party])
     self.tesla_can = TeslaCAN(CP, self.packer)
 
@@ -33,14 +34,16 @@ class CarController(CarControllerBase):
 
     # Wait until the override condition clears before steering
     # Canceling is done on rising edge of CS.out.steeringDisengage and is handled generically with CC.cruiseControl.cancel
-    lat_active = CC.latActive and not CS.out.steeringDisengage
+    # Tesla angle signals are filtered - block engagement on high rate to avoid commanding a lagging value on entry.
+    self.lat_active = (CC.latActive and not CS.out.steeringDisengage
+                       and (self.lat_active or abs(CS.out.steeringRateDeg) < 40.0))
 
     if self.frame % 2 == 0:
       # Angular rate limit based on speed
       self.apply_angle_last = apply_steer_angle_limits_vm(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
-                                                          lat_active, CarControllerParams, self.VM)
+                                                          self.lat_active, CarControllerParams, self.VM)
 
-      can_sends.append(self.tesla_can.create_steering_control(*self.coop_steer.update(self.apply_angle_last, lat_active, self.CP_SP, CS, self.VM)))
+      can_sends.append(self.tesla_can.create_steering_control(*self.coop_steer.update(self.apply_angle_last, self.lat_active, self.CP_SP, CS, self.VM)))
 
     if self.frame % 10 == 0:
       can_sends.append(self.tesla_can.create_steering_allowed())
@@ -49,7 +52,7 @@ class CarController(CarControllerBase):
     if self.CP.openpilotLongitudinalControl:
       if self.frame % 4 == 0:
         state = 13 if CC.cruiseControl.cancel else 4  # 4=ACC_ON, 13=ACC_CANCEL_GENERIC_SILENT
-        accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX if lat_active else 0))
+        accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX if self.lat_active else 0))
         cntr = (self.frame // 4) % 8
         can_sends.append(self.tesla_can.create_longitudinal_command(state, accel, cntr, CS.out.vEgo, CC.longActive, CS.cruise_override))
 
