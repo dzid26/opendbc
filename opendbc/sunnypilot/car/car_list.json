@@ -1831,6 +1831,18 @@
     ],
     "package": "Smart Cruise Control (SCC)"
   },
+  "Hyundai Kona Hybrid (without HDA II) 2024-26": {
+    "platform": "HYUNDAI_KONA_2ND_GEN",
+    "make": "Hyundai",
+    "brand": "hyundai",
+    "model": "Kona Hybrid (without HDA II)",
+    "year": [
+      "2024",
+      "2025",
+      "2026"
+    ],
+    "package": "Smart Cruise Control (SCC)"
+  },
   "Hyundai Kona Non-SCC 2019": {
     "platform": "HYUNDAI_KONA_NON_SCC",
     "make": "Hyundai",

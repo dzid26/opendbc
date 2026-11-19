@@ -657,7 +657,10 @@ class CAR(Platforms):
     flags=HyundaiFlags.CHECKSUM_CRC8,
   )
   HYUNDAI_KONA_2ND_GEN = HyundaiCanFDPlatformConfig(
-    [HyundaiCarDocs("Hyundai Kona (without HDA II) 2024-25", car_parts=CarParts.common([CarHarness.hyundai_l]))],
+    [
+      HyundaiCarDocs("Hyundai Kona (without HDA II) 2024-25", car_parts=CarParts.common([CarHarness.hyundai_l])),
+      HyundaiCarDocs("Hyundai Kona Hybrid (without HDA II) 2024-26", car_parts=CarParts.common([CarHarness.hyundai_l])),
+    ],
     HYUNDAI_KONA_EV_2ND_GEN.specs,
   )
   HYUNDAI_KONA_NON_SCC = HyundaiNonSccPlatformConfig(
